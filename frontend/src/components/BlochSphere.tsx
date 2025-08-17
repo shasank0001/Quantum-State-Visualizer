@@ -41,12 +41,16 @@ export const BlochSphere = ({ qubit, isSelected, onSelect, size = 'medium' }: Bl
         
         <div style={{ height: canvasHeight }}>
           <Canvas
-            camera={{ position: [3, 3, 3], fov: 50 }}
+            camera={{ position: [2.5, 2.5, 2.5], fov: 50 }}
             dpr={[1, 2]}
             performance={{ min: 0.5 }}
           >
             <SphereContent qubit={qubit} isSelected={isSelected} size={size} />
-            <OrbitControls enableZoom={false} enablePan={false} />
+            <OrbitControls 
+              enableZoom={false} 
+              enablePan={false}
+              target={[0, 0, 0]}
+            />
           </Canvas>
         </div>
         
@@ -76,33 +80,37 @@ function SphereContent({ qubit, isSelected, size }: SphereContentProps) {
   const vectorRef = useRef<THREE.Group>(null);
   const arrowRef = useRef<THREE.Mesh>(null);
   
-  // Calculate vector length based on purity
-  const vectorLength = Math.sqrt(2 * qubit.bloch.purity - 1);
-  const vectorOpacity = Math.max(0.3, qubit.bloch.purity);
+  // Calculate vector length - should be the magnitude of Bloch vector (≤1 for physical states)
+  const vectorLength = Math.min(1.0, Math.sqrt(
+    qubit.bloch.x * qubit.bloch.x + 
+    qubit.bloch.y * qubit.bloch.y + 
+    qubit.bloch.z * qubit.bloch.z
+  ));
+  const vectorOpacity = Math.max(0.8, qubit.bloch.purity);
   
   // Update arrow rotation to point along vector direction
   useEffect(() => {
     if (!arrowRef.current) return;
     
     const direction = new THREE.Vector3(
-      qubit.bloch.x * vectorLength,
-      qubit.bloch.y * vectorLength,
-      qubit.bloch.z * vectorLength
+      qubit.bloch.x,
+      qubit.bloch.y,
+      qubit.bloch.z
     );
     
-    if (direction.length() > 0) {
+    if (direction.length() > 0.001) {
       const up = new THREE.Vector3(0, 1, 0); // Default cone direction
       const quaternion = new THREE.Quaternion();
       quaternion.setFromUnitVectors(up, direction.normalize());
       arrowRef.current.setRotationFromQuaternion(quaternion);
     }
-  }, [qubit.bloch.x, qubit.bloch.y, qubit.bloch.z, vectorLength]);
+  }, [qubit.bloch.x, qubit.bloch.y, qubit.bloch.z]);
   
-  // Axis lines data
+  // Axis lines data - corrected coordinate system
   const axisLines = useMemo(() => [
     { points: [[-1, 0, 0], [1, 0, 0]], color: '#ff4444' }, // X-axis (red)
-    { points: [[0, -1, 0], [0, 1, 0]], color: '#44ff44' }, // Y-axis (green)
-    { points: [[0, 0, -1], [0, 0, 1]], color: '#4444ff' }, // Z-axis (blue)
+    { points: [[0, 0, -1], [0, 0, 1]], color: '#44ff44' }, // Y-axis (green) 
+    { points: [[0, -1, 0], [0, 1, 0]], color: '#4444ff' }, // Z-axis (blue)
   ], []);
   
   // Animate sphere rotation
@@ -115,28 +123,30 @@ function SphereContent({ qubit, isSelected, size }: SphereContentProps) {
   return (
     <group ref={meshRef}>
       {/* Ambient lighting */}
-      <ambientLight intensity={0.4} />
-      <pointLight position={[10, 10, 10]} intensity={0.8} />
+      <ambientLight intensity={0.6} />
+      <pointLight position={[5, 5, 5]} intensity={0.8} />
+      <pointLight position={[-5, -5, 5]} intensity={0.4} />
       
-      {/* Bloch sphere */}
+      {/* Bloch sphere - more transparent */}
       <mesh>
-        <sphereGeometry args={[1, 32, 16]} />
+        <sphereGeometry args={[1, 64, 32]} />
         <meshPhongMaterial 
-          color="#1a1a2e"
+          color="#2a2a3a"
           transparent 
-          opacity={isSelected ? 0.3 : 0.15}
+          opacity={isSelected ? 0.15 : 0.08}
           wireframe={false}
+          side={THREE.DoubleSide}
         />
       </mesh>
       
       {/* Wireframe sphere */}
       <mesh>
-        <sphereGeometry args={[1.01, 16, 8]} />
+        <sphereGeometry args={[1.01, 24, 12]} />
         <meshBasicMaterial 
-          color={isSelected ? "#00bfff" : "#444444"}
+          color={isSelected ? "#00bfff" : "#666666"}
           wireframe 
           transparent 
-          opacity={0.3}
+          opacity={0.4}
         />
       </mesh>
       
@@ -152,9 +162,9 @@ function SphereContent({ qubit, isSelected, size }: SphereContentProps) {
         />
       ))}
       
-      {/* Axis labels */}
+      {/* Axis labels with standard Bloch sphere conventions */}
       <Text
-        position={[1.2, 0, 0]}
+        position={[1.3, 0, 0]}
         fontSize={0.15}
         color="#ff4444"
         anchorX="center"
@@ -163,7 +173,16 @@ function SphereContent({ qubit, isSelected, size }: SphereContentProps) {
         X
       </Text>
       <Text
-        position={[0, 1.2, 0]}
+        position={[-1.3, 0, 0]}
+        fontSize={0.15}
+        color="#ff4444"
+        anchorX="center"
+        anchorY="middle"
+      >
+        -X
+      </Text>
+      <Text
+        position={[0, 0, 1.3]}
         fontSize={0.15}
         color="#44ff44"
         anchorX="center"
@@ -172,7 +191,16 @@ function SphereContent({ qubit, isSelected, size }: SphereContentProps) {
         Y
       </Text>
       <Text
-        position={[0, 0, 1.2]}
+        position={[0, 0, -1.3]}
+        fontSize={0.15}
+        color="#44ff44"
+        anchorX="center"
+        anchorY="middle"
+      >
+        -Y
+      </Text>
+      <Text
+        position={[0, 1.3, 0]}
         fontSize={0.15}
         color="#4444ff"
         anchorX="center"
@@ -180,41 +208,76 @@ function SphereContent({ qubit, isSelected, size }: SphereContentProps) {
       >
         Z
       </Text>
+      <Text
+        position={[0, -1.3, 0]}
+        fontSize={0.15}
+        color="#4444ff"
+        anchorX="center"
+        anchorY="middle"
+      >
+        -Z
+      </Text>
+      
+      {/* Quantum state labels on Z-axis */}
+      <Text
+        position={[0, 1.6, 0]}
+        fontSize={0.18}
+        color="#ffffff"
+        anchorX="center"
+        anchorY="middle"
+        fontWeight="bold"
+      >
+        |0⟩
+      </Text>
+      <Text
+        position={[0, -1.6, 0]}
+        fontSize={0.18}
+        color="#ffffff"
+        anchorX="center"
+        anchorY="middle"
+        fontWeight="bold"
+      >
+        |1⟩
+      </Text>
       
       {/* State vector */}
       <group ref={vectorRef}>
-        {/* Vector line */}
+        {/* Vector line - make it more prominent */}
         <Line
           points={[
             [0, 0, 0],
-            [
-              qubit.bloch.x * vectorLength,
-              qubit.bloch.y * vectorLength,
-              qubit.bloch.z * vectorLength
-            ]
+            [qubit.bloch.x, qubit.bloch.y, qubit.bloch.z]
           ]}
-          color={isSelected ? "#00bfff" : "#ffaa00"}
-          lineWidth={4}
+          color={isSelected ? "#00ffff" : "#ff6600"}
+          lineWidth={6}
           transparent
-          opacity={vectorOpacity}
+          opacity={Math.max(0.8, vectorOpacity)}
         />
         
-        {/* Vector arrow head */}
+        {/* Vector arrow head - larger and more visible */}
         <mesh 
           ref={arrowRef}
-          position={[
-            qubit.bloch.x * vectorLength,
-            qubit.bloch.y * vectorLength,
-            qubit.bloch.z * vectorLength
-          ]}
+          position={[qubit.bloch.x, qubit.bloch.y, qubit.bloch.z]}
         >
-          <coneGeometry args={[0.06, 0.12, 8]} />
+          <coneGeometry args={[0.08, 0.16, 8]} />
           <meshBasicMaterial 
-            color={isSelected ? "#00bfff" : "#ffaa00"}
+            color={isSelected ? "#00ffff" : "#ff6600"}
             transparent
-            opacity={vectorOpacity}
+            opacity={Math.max(0.8, vectorOpacity)}
             depthTest={false}
             side={THREE.DoubleSide}
+          />
+        </mesh>
+        
+        {/* Add a small sphere at the vector tip for better visibility */}
+        <mesh 
+          position={[qubit.bloch.x, qubit.bloch.y, qubit.bloch.z]}
+        >
+          <sphereGeometry args={[0.04, 16, 8]} />
+          <meshBasicMaterial 
+            color={isSelected ? "#00ffff" : "#ff6600"}
+            transparent
+            opacity={Math.max(0.9, vectorOpacity)}
           />
         </mesh>
       </group>

@@ -119,10 +119,21 @@ cx q[1], q[2];`,
       const request: SimulationRequest = {
         qasm_code: state.qasmCode,
         shots: state.simulation.shots,
-        pipeline: state.simulation.pipeline,
+        pipeline_override: state.simulation.pipeline,
       };
 
       const response = await quantumAPI.simulate(request);
+
+// Helper function to parse complex numbers from backend
+function parseComplexNumber(complexStr: string): number {
+  // Backend returns complex numbers as strings like "0.5+0j" or "0.5-0.2j"
+  // For density matrices, we usually only need the real part
+  if (typeof complexStr === 'string') {
+    const match = complexStr.match(/^([+-]?[0-9]*\.?[0-9]+)/);
+    return match ? parseFloat(match[1]) : 0;
+  }
+  return complexStr as number; // fallback if already a number
+}
 
       // Convert backend response to frontend format
       const qubits: QubitState[] = response.qubits.map((qubit: QubitResponse) => ({
@@ -133,7 +144,10 @@ cx q[1], q[2];`,
           z: qubit.bloch_coords[2],
           purity: qubit.purity,
         },
-        rho: qubit.density_matrix,
+        rho: [
+          [parseComplexNumber(qubit.density_matrix[0][0]), parseComplexNumber(qubit.density_matrix[0][1])],
+          [parseComplexNumber(qubit.density_matrix[1][0]), parseComplexNumber(qubit.density_matrix[1][1])]
+        ] as [[number, number], [number, number]],
         label: qubit.label,
       }));
 

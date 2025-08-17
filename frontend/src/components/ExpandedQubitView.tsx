@@ -319,9 +319,13 @@ function InteractiveBlochSphere({ qubit, showPhase, showState }: InteractiveBloc
   const meshRef = useRef<THREE.Group>(null);
   const vectorRef = useRef<THREE.Group>(null);
   
-  // Calculate vector length based on purity
-  const vectorLength = Math.sqrt(2 * qubit.bloch.purity - 1);
-  const vectorOpacity = Math.max(0.5, qubit.bloch.purity);
+  // Calculate vector length as magnitude of Bloch vector
+  const vectorLength = Math.min(1.0, Math.sqrt(
+    qubit.bloch.x * qubit.bloch.x + 
+    qubit.bloch.y * qubit.bloch.y + 
+    qubit.bloch.z * qubit.bloch.z
+  ));
+  const vectorOpacity = Math.max(0.8, qubit.bloch.purity);
   
   // Animate sphere rotation
   useFrame((state) => {
@@ -379,7 +383,7 @@ function InteractiveBlochSphere({ qubit, showPhase, showState }: InteractiveBloc
         );
       })}
       
-      {/* Coordinate axes with enhanced styling */}
+      {/* Coordinate axes with enhanced styling - corrected orientation */}
       <Line
         points={[[-1.2, 0, 0], [1.2, 0, 0]] as [number, number, number][]}
         color="#ff6666"
@@ -389,7 +393,7 @@ function InteractiveBlochSphere({ qubit, showPhase, showState }: InteractiveBloc
         renderOrder={500}
       />
       <Line
-        points={[[0, -1.2, 0], [0, 1.2, 0]] as [number, number, number][]}
+        points={[[0, 0, -1.2], [0, 0, 1.2]] as [number, number, number][]}
         color="#66ff66"
         lineWidth={4}
         transparent
@@ -397,7 +401,7 @@ function InteractiveBlochSphere({ qubit, showPhase, showState }: InteractiveBloc
         renderOrder={500}
       />
       <Line
-        points={[[0, 0, -1.2], [0, 0, 1.2]] as [number, number, number][]}
+        points={[[0, -1.2, 0], [0, 1.2, 0]] as [number, number, number][]}
         color="#6666ff"
         lineWidth={4}
         transparent
@@ -405,7 +409,7 @@ function InteractiveBlochSphere({ qubit, showPhase, showState }: InteractiveBloc
         renderOrder={500}
       />
       
-      {/* Enhanced axis labels */}
+      {/* Standard Bloch sphere axis labels */}
       <Text
         position={[1.4, 0, 0]}
         fontSize={0.25}
@@ -418,7 +422,18 @@ function InteractiveBlochSphere({ qubit, showPhase, showState }: InteractiveBloc
         X
       </Text>
       <Text
-        position={[0, 1.4, 0]}
+        position={[-1.4, 0, 0]}
+        fontSize={0.25}
+        color="#ff6666"
+        anchorX="center"
+        anchorY="middle"
+        fontWeight="bold"
+        renderOrder={1001}
+      >
+        -X
+      </Text>
+      <Text
+        position={[0, 0, 1.4]}
         fontSize={0.25}
         color="#66ff66"
         anchorX="center"
@@ -429,7 +444,18 @@ function InteractiveBlochSphere({ qubit, showPhase, showState }: InteractiveBloc
         Y
       </Text>
       <Text
-        position={[0, 0, 1.4]}
+        position={[0, 0, -1.4]}
+        fontSize={0.25}
+        color="#66ff66"
+        anchorX="center"
+        anchorY="middle"
+        fontWeight="bold"
+        renderOrder={1001}
+      >
+        -Y
+      </Text>
+      <Text
+        position={[0, 1.4, 0]}
         fontSize={0.25}
         color="#6666ff"
         anchorX="center"
@@ -439,37 +465,42 @@ function InteractiveBlochSphere({ qubit, showPhase, showState }: InteractiveBloc
       >
         Z
       </Text>
+      <Text
+        position={[0, -1.4, 0]}
+        fontSize={0.25}
+        color="#6666ff"
+        anchorX="center"
+        anchorY="middle"
+        fontWeight="bold"
+        renderOrder={1001}
+      >
+        -Z
+      </Text>
       
-      {/* State vector with perfect connection */}
+      {/* State vector (main arrow) - use actual Bloch coordinates, more prominent */}
       <group ref={vectorRef}>
         <VectorArrow
           start={[0, 0, 0]}
-          end={[
-            qubit.bloch.x * vectorLength,
-            qubit.bloch.y * vectorLength,
-            qubit.bloch.z * vectorLength
-          ]}
+          end={[qubit.bloch.x, qubit.bloch.y, qubit.bloch.z]}
           color="#00ffff"
-          lineWidth={8}
+          lineWidth={10}
         />
-        
-        {/* Vector base point */}
-        <mesh position={[0, 0, 0]} renderOrder={1000}>
-          <sphereGeometry args={[0.03, 8, 8]} />
+        {/* Add a small sphere at the tip for visibility */}
+        <mesh position={[qubit.bloch.x, qubit.bloch.y, qubit.bloch.z]} renderOrder={1002}>
+          <sphereGeometry args={[0.06, 16, 8]} />
           <meshBasicMaterial 
-            color="#ffffff"
+            color="#00ffff"
             transparent
-            opacity={0.8}
-            depthTest={false}
+            opacity={0.95}
           />
         </mesh>
       </group>
       
-      {/* State labels */}
+      {/* State labels - positioned on Z-axis (Y in Three.js coordinates) */}
       {showState && (
         <>
           <Text
-            position={[0, 0, 1.6]}
+            position={[0, 1.6, 0]}
             fontSize={0.2}
             color="#ffffff"
             anchorX="center"
@@ -480,7 +511,7 @@ function InteractiveBlochSphere({ qubit, showPhase, showState }: InteractiveBloc
             |0⟩
           </Text>
           <Text
-            position={[0, 0, -1.6]}
+            position={[0, -1.6, 0]}
             fontSize={0.2}
             color="#ffffff"
             anchorX="center"
