@@ -254,30 +254,28 @@ function SphereContent({ qubit, isSelected, size }: SphereContentProps) {
           opacity={Math.max(0.8, vectorOpacity)}
         />
         
-        {/* Vector arrow head - larger and more visible */}
+        {/* Vector arrow head - smaller and smoother */}
         <mesh 
           ref={arrowRef}
           position={[qubit.bloch.x, qubit.bloch.y, qubit.bloch.z]}
         >
-          <coneGeometry args={[0.08, 0.16, 8]} />
+          <coneGeometry args={[0.04, 0.08, 12]} />
           <meshBasicMaterial 
             color={isSelected ? "#00ffff" : "#ff6600"}
             transparent
             opacity={Math.max(0.8, vectorOpacity)}
-            depthTest={false}
-            side={THREE.DoubleSide}
           />
         </mesh>
         
-        {/* Add a small sphere at the vector tip for better visibility */}
+        {/* Small sphere at the vector tip - reduced size for subtlety */}
         <mesh 
           position={[qubit.bloch.x, qubit.bloch.y, qubit.bloch.z]}
         >
-          <sphereGeometry args={[0.04, 16, 8]} />
+          <sphereGeometry args={[0.02, 12, 8]} />
           <meshBasicMaterial 
             color={isSelected ? "#00ffff" : "#ff6600"}
             transparent
-            opacity={Math.max(0.9, vectorOpacity)}
+            opacity={Math.max(0.7, vectorOpacity)}
           />
         </mesh>
       </group>

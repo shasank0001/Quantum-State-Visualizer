@@ -159,6 +159,12 @@ def route_circuit(circuit: QuantumCircuit, shots: int = 1024, force_pipeline: Op
         for instr in circuit.data
     )
     
+    # Debug: Log the operations found
+    ops_found = [instr.operation.name.lower() for instr in circuit.data]
+    non_unitary_found = [op for op in ops_found if op in NON_UNITARY_OPS]
+    logger.info(f"Circuit operations: {ops_found}")
+    logger.info(f"Non-unitary operations found: {non_unitary_found}")
+    
     qubit_count = circuit.num_qubits
     op_count = len(circuit.data)
     
@@ -241,34 +247,26 @@ def partial_trace_qubit(state_vector: np.ndarray, total_qubits: int, target_qubi
     Returns:
         2x2 reduced density matrix for target qubit
     """
-    # Reshape state vector into tensor form
-    dims = [2] * total_qubits
-    state_tensor = state_vector.reshape(dims)
+    # Initialize the reduced density matrix
+    rho = np.zeros((2, 2), dtype=complex)
     
-    # Create density matrix
-    rho_full = np.outer(state_vector.conj(), state_vector)
-    rho_full = rho_full.reshape([2] * (2 * total_qubits))
+    # Sum over all computational basis states
+    total_states = 2 ** total_qubits
     
-    # Trace out all qubits except target
-    axes_to_trace = []
-    for i in range(total_qubits):
-        if i != target_qubit:
-            axes_to_trace.extend([i, i + total_qubits])
+    for i in range(total_states):
+        for j in range(total_states):
+            # Extract the target qubit state for both i and j
+            target_i = (i >> target_qubit) & 1
+            target_j = (j >> target_qubit) & 1
+            
+            # Check if all other qubits are the same between i and j
+            # (this is the condition for the partial trace)
+            mask = ~(1 << target_qubit)
+            if (i & mask) == (j & mask):
+                # Add the contribution to the reduced density matrix
+                rho[target_i, target_j] += state_vector[i].conj() * state_vector[j]
     
-    # Perform partial trace
-    rho_reduced = rho_full
-    for i, axis in enumerate(sorted(axes_to_trace, reverse=True)):
-        # Adjust axis index for previous traces
-        adjusted_axis = axis - i
-        # Trace over this axis
-        rho_reduced = np.trace(rho_reduced, axis1=adjusted_axis, axis2=adjusted_axis)
-    
-    # Ensure result is 2x2
-    if rho_reduced.shape != (2, 2):
-        # Fallback: extract 2x2 submatrix
-        rho_reduced = rho_reduced.reshape((2, 2))
-    
-    return rho_reduced
+    return rho
 
 def clip_tiny_values(value: float, threshold: float = 1e-12) -> float:
     """

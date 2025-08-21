@@ -1,0 +1,21 @@
+# Test Dependencies for Quantum State Visualizer
+# Install with: pip install -r test_requirements.txt
+
+# Required for backend API testing
+requests>=2.31.0
+
+# Required for frontend UI testing
+selenium>=4.15.0
+
+# Optional: For more advanced testing features
+pytest>=7.4.0
+pytest-html>=3.2.0
+
+# Optional: For test reporting
+jinja2>=3.1.2
+
+# Note: ChromeDriver is also required for frontend tests
+# Install via system package manager:
+# - Ubuntu/Debian: sudo apt-get install chromium-chromedriver
+# - macOS: brew install chromedriver
+# - Windows: Download from https://chromedriver.chromium.org/

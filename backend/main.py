@@ -129,7 +129,7 @@ async def simulate_circuit(request: SimulationRequest):
             force_pipeline=request.pipeline_override
         )
         
-        logger.info(f"Routed to {pipeline_name} pipeline")
+        logger.info(f"Routed to {pipeline_name} pipeline for circuit with {circuit.num_qubits} qubits, unitary={validation_info['is_unitary']}")
         
         if pipeline_name not in PIPELINES:
             raise HTTPException(
@@ -170,6 +170,27 @@ async def simulate_circuit(request: SimulationRequest):
                 status_code=408,
                 detail="Simulation timeout after 5 minutes"
             )
+        except Exception as pipeline_error:
+            # If the selected pipeline fails, try to fallback to exact_density
+            if pipeline_name != 'exact_density' and 'not suitable' in str(pipeline_error).lower():
+                logger.warning(f"{pipeline_name} pipeline failed: {pipeline_error}. Falling back to exact_density pipeline.")
+                try:
+                    fallback_pipeline = PIPELINES['exact_density']
+                    results = await asyncio.get_event_loop().run_in_executor(
+                        None, fallback_pipeline.run, circuit, request.shots
+                    )
+                    pipeline_name = 'exact_density'  # Update for response
+                except Exception as fallback_error:
+                    logger.error(f"Fallback pipeline also failed: {fallback_error}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Both {pipeline_name} and exact_density pipelines failed: {str(fallback_error)}"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Pipeline {pipeline_name} simulation failed: {str(pipeline_error)}"
+                )
         
         # Format results
         qubit_states = []
@@ -373,13 +394,17 @@ async def run_streaming_simulation(websocket: WebSocket, pipeline: SimulationPip
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     """Custom HTTP exception handler"""
-    return {
-        "error": {
-            "status_code": exc.status_code,
-            "detail": exc.detail,
-            "timestamp": datetime.utcnow().isoformat()
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "status_code": exc.status_code,
+                "detail": exc.detail,
+                "timestamp": datetime.utcnow().isoformat()
+            }
         }
-    }
+    )
 
 if __name__ == "__main__":
     import uvicorn

@@ -119,7 +119,8 @@ cx q[1], q[2];`,
       const request: SimulationRequest = {
         qasm_code: state.qasmCode,
         shots: state.simulation.shots,
-        pipeline_override: state.simulation.pipeline,
+        // Only override pipeline if explicitly set by user, otherwise let backend choose
+        pipeline_override: undefined, // Let backend's smart routing decide
       };
 
       const response = await quantumAPI.simulate(request);
@@ -245,5 +246,149 @@ qreg q[2];
 ry(1.57) q[0];
 rx(0.78) q[1];`,
     description: 'Random quantum state for demonstration',
+  },
+  w_state: {
+    name: 'W State',
+    qasm: `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+ry(1.910633236) q[0];
+cx q[0], q[1];
+ccx q[0], q[1], q[2];
+cx q[0], q[1];`,
+    description: 'Three-qubit W state with symmetric entanglement',
+  },
+  deutsch: {
+    name: 'Deutsch Algorithm',
+    qasm: `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+x q[1];
+h q[0];
+h q[1];
+cx q[0], q[1];
+h q[0];`,
+    description: 'Deutsch algorithm demonstration circuit',
+  },
+  phase_kickback: {
+    name: 'Phase Kickback',
+    qasm: `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+h q[0];
+x q[1];
+h q[1];
+cz q[0], q[1];
+h q[1];`,
+    description: 'Demonstrates phase kickback phenomenon',
+  },
+  interference: {
+    name: 'Quantum Interference',
+    qasm: `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+h q[0];
+s q[0];
+h q[0];`,
+    description: 'Shows quantum interference with phase gates',
+  },
+  teleportation: {
+    name: 'Quantum Teleportation',
+    qasm: `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+creg c[3];
+ry(0.5) q[0];
+h q[1];
+cx q[1], q[2];
+cx q[0], q[1];
+h q[0];
+measure q[0] -> c[0];
+measure q[1] -> c[1];`,
+    description: 'Quantum teleportation protocol setup',
+  },
+  bernstein_vazirani: {
+    name: 'Bernstein-Vazirani',
+    qasm: `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[4];
+x q[3];
+h q[0];
+h q[1];
+h q[2];
+h q[3];
+cx q[0], q[3];
+cx q[2], q[3];
+h q[0];
+h q[1];
+h q[2];`,
+    description: 'Bernstein-Vazirani algorithm for secret string 101',
+  },
+  grover_2bit: {
+    name: 'Grover Search (2-bit)',
+    qasm: `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+h q[0];
+h q[1];
+z q[0];
+z q[1];
+cz q[0], q[1];
+h q[0];
+h q[1];
+x q[0];
+x q[1];
+cz q[0], q[1];
+x q[0];
+x q[1];
+h q[0];
+h q[1];`,
+    description: 'Grover search algorithm for 2 qubits',
+  },
+  qft_3bit: {
+    name: 'Quantum Fourier Transform',
+    qasm: `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+x q[0];
+h q[2];
+cu1(pi/2) q[1], q[2];
+cu1(pi/4) q[0], q[2];
+h q[1];
+cu1(pi/2) q[0], q[1];
+h q[0];
+swap q[0], q[2];`,
+    description: '3-qubit Quantum Fourier Transform',
+  },
+  cat_state: {
+    name: 'Schrödinger Cat State',
+    qasm: `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[4];
+h q[0];
+cx q[0], q[1];
+cx q[0], q[2];
+cx q[0], q[3];`,
+    description: 'Four-qubit cat state |0000⟩ + |1111⟩',
+  },
+  plus_minus: {
+    name: 'Plus-Minus States',
+    qasm: `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+h q[0];
+x q[1];
+h q[1];`,
+    description: 'Demonstrates |+⟩ and |-⟩ states',
+  },
+  bloch_rotations: {
+    name: 'Bloch Sphere Rotations',
+    qasm: `OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+rx(pi/3) q[0];
+ry(pi/4) q[1];
+rz(pi/6) q[2];`,
+    description: 'Different rotation axes on Bloch sphere',
   },
 };

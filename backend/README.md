@@ -14,6 +14,7 @@ The backend implements a client-server architecture with:
 ## Features
 
 ### Core Functionality
+
 - ✅ OpenQASM 2.0 circuit parsing and validation
 - ✅ Automatic routing to optimal simulation pipeline
 - ✅ Bloch sphere coordinate calculation
@@ -22,11 +23,13 @@ The backend implements a client-server architecture with:
 - ✅ Comprehensive error handling and logging
 
 ### Simulation Pipelines
+
 - **UnitaryPipeline**: Statevector simulation for pure states (≤20 qubits)
-- **ExactDensityPipeline**: Full density matrix evolution (≤16 qubits)  
+- **ExactDensityPipeline**: Full density matrix evolution (≤16 qubits)
 - **TrajectoryPipeline**: Monte Carlo sampling for measurements (≤16 qubits)
 
 ### Security & Limits
+
 - Circuit validation with gate whitelisting
 - Resource limits: 24 qubits max, 1000 operations max
 - Simulation timeouts (5 minutes)
@@ -35,33 +38,39 @@ The backend implements a client-server architecture with:
 ## Installation
 
 ### Prerequisites
+
 - Python 3.11+
 - Poetry or pip for dependency management
 
 ### Local Development Setup
 
 1. **Install dependencies:**
+
 ```bash
 pip install -r requirements.txt
 ```
 
 2. **Run the server:**
+
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 3. **Access the API:**
+
 - API Documentation: http://localhost:8000/docs
 - Health Check: http://localhost:8000/health
 
 ### Docker Setup
 
 1. **Build the image:**
+
 ```bash
 docker build -t quantum-visualizer-backend .
 ```
 
 2. **Run the container:**
+
 ```bash
 docker run -p 8000:8000 quantum-visualizer-backend
 ```
@@ -71,9 +80,11 @@ docker run -p 8000:8000 quantum-visualizer-backend
 ### REST Endpoints
 
 #### `POST /simulate`
+
 Simulate a quantum circuit and return Bloch sphere visualization data.
 
 **Request Body:**
+
 ```json
 {
   "qasm_code": "OPENQASM 2.0;\\ninclude \"qelib1.inc\";\\nqreg q[2];\\nh q[0];\\ncx q[0], q[1];",
@@ -84,6 +95,7 @@ Simulate a quantum circuit and return Bloch sphere visualization data.
 ```
 
 **Response:**
+
 ```json
 {
   "qubits": [
@@ -107,14 +119,17 @@ Simulate a quantum circuit and return Bloch sphere visualization data.
 ```
 
 #### `GET /health`
+
 Health check endpoint returning system status.
 
 ### WebSocket Endpoints
 
 #### `WS /ws/simulate`
+
 Real-time simulation streaming with progress updates.
 
 **Client Messages:**
+
 ```json
 {
   "type": "start_simulation",
@@ -126,6 +141,7 @@ Real-time simulation streaming with progress updates.
 ```
 
 **Server Messages:**
+
 ```json
 {
   "type": "progress",
@@ -141,26 +157,29 @@ Real-time simulation streaming with progress updates.
 Circuits are automatically routed based on characteristics:
 
 1. **Unitary circuits** (≤20 qubits) → `UnitaryPipeline`
-2. **Non-unitary circuits** (≤16 qubits, ≥1000 shots) → `TrajectoryPipeline` 
+2. **Non-unitary circuits** (≤16 qubits, ≥1000 shots) → `TrajectoryPipeline`
 3. **All other circuits** → `ExactDensityPipeline`
 
 ### Pipeline Details
 
 #### UnitaryPipeline
+
 - **Method**: Statevector simulation
 - **Best for**: Pure quantum states, unitary evolution
 - **Limits**: 20 qubits maximum
 - **Memory**: O(2^n) scaling
 - **Accuracy**: Exact (numerical precision)
 
-#### ExactDensityPipeline  
+#### ExactDensityPipeline
+
 - **Method**: Full density matrix evolution
 - **Best for**: Mixed states, fallback cases
-- **Limits**: 16 qubits maximum  
+- **Limits**: 16 qubits maximum
 - **Memory**: O(4^n) scaling
 - **Accuracy**: Exact (numerical precision)
 
 #### TrajectoryPipeline
+
 - **Method**: Quantum Monte Carlo sampling
 - **Best for**: Circuits with measurements, large systems
 - **Limits**: 16 qubits maximum
@@ -170,11 +189,13 @@ Circuits are automatically routed based on characteristics:
 ## Configuration
 
 ### Environment Variables
+
 - `PYTHONPATH`: Set to `/app` for proper imports
 - `LOG_LEVEL`: Logging level (default: INFO)
 - `MAX_WORKERS`: Number of worker processes (default: 1)
 
 ### Security Settings
+
 ```python
 # Resource limits (configurable in utils.py)
 MAX_QUBITS = 24
@@ -186,6 +207,7 @@ SIMULATION_TIMEOUT = 300  # seconds
 ## Development
 
 ### Project Structure
+
 ```
 backend/
 ├── main.py              # FastAPI application
@@ -205,6 +227,7 @@ backend/
 ### Adding New Pipelines
 
 1. **Subclass `SimulationPipeline`:**
+
 ```python
 from pipelines.base import SimulationPipeline
 
@@ -215,6 +238,7 @@ class CustomPipeline(SimulationPipeline):
 ```
 
 2. **Register in `pipelines/__init__.py`:**
+
 ```python
 AVAILABLE_PIPELINES['custom'] = CustomPipeline
 ```
@@ -258,6 +282,7 @@ logger.info("Circuit parsed successfully", extra={
 4. **Security**: Run with non-root user, validate all inputs
 
 ### Docker Compose Example
+
 ```yaml
 version: '3.8'
 services:
@@ -279,7 +304,7 @@ services:
 ### Common Issues
 
 1. **Import Errors**: Ensure all dependencies are installed
-2. **Memory Issues**: Reduce qubit count or use trajectory simulation  
+2. **Memory Issues**: Reduce qubit count or use trajectory simulation
 3. **Timeout Errors**: Increase `SIMULATION_TIMEOUT` for complex circuits
 4. **WebSocket Disconnections**: Check network stability and implement reconnection logic
 
