@@ -8,7 +8,7 @@ import { useQuantumStore } from '@/store/quantumStore';
 import { AtomIcon, InfoIcon } from 'lucide-react';
 
 const Index = () => {
-  const { qubits, simulation } = useQuantumStore();
+  const { qubits, simulation, editorTab } = useQuantumStore();
   
   return (
     <div className="min-h-screen bg-background">
@@ -46,17 +46,27 @@ const Index = () => {
       
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {/* Editor Panel */}
-          <div className="lg:col-span-1">
-            <EditorPanel />
+        {editorTab === 'visual' ? (
+          // In Visual mode, give the editor full-width and move states below
+          <div className="flex flex-col gap-6 mb-6">
+            <div>
+              <EditorPanel />
+            </div>
+            <div>
+              <CanvasGrid />
+            </div>
           </div>
-          
-          {/* Canvas Grid */}
-          <div className="lg:col-span-2">
-            <CanvasGrid />
+        ) : (
+          // In Code mode, keep the side-by-side layout
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <div className="lg:col-span-1">
+              <EditorPanel />
+            </div>
+            <div className="lg:col-span-2">
+              <CanvasGrid />
+            </div>
           </div>
-        </div>
+        )}
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Inspector */}

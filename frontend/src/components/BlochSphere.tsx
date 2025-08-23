@@ -94,8 +94,8 @@ function SphereContent({ qubit, isSelected, size }: SphereContentProps) {
     
     const direction = new THREE.Vector3(
       qubit.bloch.x,
-      qubit.bloch.y,
-      qubit.bloch.z
+      qubit.bloch.z,
+      qubit.bloch.y
     );
     
     if (direction.length() > 0.001) {
@@ -109,8 +109,8 @@ function SphereContent({ qubit, isSelected, size }: SphereContentProps) {
   // Axis lines data - corrected coordinate system
   const axisLines = useMemo(() => [
     { points: [[-1, 0, 0], [1, 0, 0]], color: '#ff4444' }, // X-axis (red)
-    { points: [[0, 0, -1], [0, 0, 1]], color: '#44ff44' }, // Y-axis (green) 
-    { points: [[0, -1, 0], [0, 1, 0]], color: '#4444ff' }, // Z-axis (blue)
+    { points: [[0, 0, -1], [0, 0, 1]], color: '#44ff44' }, // Y-axis (green) - Z direction in Three.js
+    { points: [[0, -1, 0], [0, 1, 0]], color: '#4444ff' }, // Z-axis (blue) - Y direction in Three.js
   ], []);
   
   // Animate sphere rotation
@@ -242,11 +242,11 @@ function SphereContent({ qubit, isSelected, size }: SphereContentProps) {
       
       {/* State vector */}
       <group ref={vectorRef}>
-        {/* Vector line - make it more prominent */}
+        {/* Vector line */}
         <Line
           points={[
             [0, 0, 0],
-            [qubit.bloch.x, qubit.bloch.y, qubit.bloch.z]
+            [qubit.bloch.x, qubit.bloch.z, qubit.bloch.y]
           ]}
           color={isSelected ? "#00ffff" : "#ff6600"}
           lineWidth={6}
@@ -257,7 +257,7 @@ function SphereContent({ qubit, isSelected, size }: SphereContentProps) {
         {/* Vector arrow head - smaller and smoother */}
         <mesh 
           ref={arrowRef}
-          position={[qubit.bloch.x, qubit.bloch.y, qubit.bloch.z]}
+          position={[qubit.bloch.x, qubit.bloch.z, qubit.bloch.y]}
         >
           <coneGeometry args={[0.04, 0.08, 12]} />
           <meshBasicMaterial 
@@ -269,7 +269,7 @@ function SphereContent({ qubit, isSelected, size }: SphereContentProps) {
         
         {/* Small sphere at the vector tip - reduced size for subtlety */}
         <mesh 
-          position={[qubit.bloch.x, qubit.bloch.y, qubit.bloch.z]}
+          position={[qubit.bloch.x, qubit.bloch.z, qubit.bloch.y]}
         >
           <sphereGeometry args={[0.02, 12, 8]} />
           <meshBasicMaterial 

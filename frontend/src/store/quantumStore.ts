@@ -35,6 +35,16 @@ export interface QuantumState {
   // Circuit input
   qasmCode: string;
   presetCircuit: string;
+  editorTab: 'visual' | 'code';
+
+  // Visual editor state
+  visualCircuit: {
+    qubits: 1|2|3|4;
+    steps: Array<Record<number, { id: string; type: 'H'|'X'|'Z'|'S'|'T'|'CNOT'|'CZ'; targets: number[]; controls?: number[]; role?: 'control'|'target'; linkId?: string }>>;
+  };
+  visualReadOnly: boolean;
+  activeGate: null | 'H'|'X'|'Z'|'S'|'T'|'CNOT'|'CZ';
+  pendingControl: number | null;
   
   // Actions
   setQubits: (qubits: QubitState[]) => void;
@@ -47,6 +57,17 @@ export interface QuantumState {
   toggleCompactMode: () => void;
   resetSimulation: () => void;
   runSimulation: () => Promise<void>;
+
+  // Visual editor actions
+  setVisualQubits: (n: 1|2|3|4) => void;
+  addColumn: () => void;
+  removeColumn: () => void;
+  setVisualReadOnly: (ro: boolean) => void;
+  compileVisualToQASM: () => string;
+  selectActiveGate: (g: QuantumState['activeGate']) => void;
+  clearPendingControl: () => void;
+  handleCellClick: (row: number, col: number) => void;
+  setEditorTab: (tab: 'visual' | 'code') => void;
 }
 
 export const useQuantumStore = create<QuantumState>((set, get) => ({
@@ -71,6 +92,15 @@ h q[0];
 cx q[0], q[1];
 cx q[1], q[2];`,
   presetCircuit: 'ghz',
+  editorTab: 'visual',
+
+  visualCircuit: {
+    qubits: 3,
+    steps: Array.from({ length: 15 }, () => ({})),
+  },
+  visualReadOnly: false,
+  activeGate: null,
+  pendingControl: null,
   
   // Actions
   setQubits: (qubits) => set({ qubits }),
@@ -116,8 +146,15 @@ cx q[1], q[2];`,
         }
       }));
 
+      // Force compilation of visual circuit if in visual mode to ensure QASM is up-to-date
+      let qasmToUse = state.qasmCode;
+      if (state.editorTab === 'visual') {
+        console.log('Compiling visual circuit to QASM before simulation...');
+        qasmToUse = get().compileVisualToQASM();
+      }
+
       const request: SimulationRequest = {
-        qasm_code: state.qasmCode,
+        qasm_code: qasmToUse,
         shots: state.simulation.shots,
         // Only override pipeline if explicitly set by user, otherwise let backend choose
         pipeline_override: undefined, // Let backend's smart routing decide
@@ -174,6 +211,203 @@ function parseComplexNumber(complexStr: string): number {
       throw error;
     }
   },
+
+  // Visual editor actions
+  setVisualQubits: (n) => set((state) => {
+    const clamped = Math.max(1, Math.min(4, n)) as 1|2|3|4;
+    // prune any nodes beyond the new qubit count
+    const prunedSteps = state.visualCircuit.steps.map((col) => {
+      const entries = Object.entries(col).filter(([row]) => Number(row) < clamped);
+      return Object.fromEntries(entries);
+    });
+    return { visualCircuit: { ...state.visualCircuit, qubits: clamped, steps: prunedSteps } };
+  }),
+
+  setEditorTab: (tab) => set({ editorTab: tab }),
+  addColumn: () => set((state) => ({
+    visualCircuit: { ...state.visualCircuit, steps: [...state.visualCircuit.steps, {}] }
+  })),
+  removeColumn: () => set((state) => ({
+    visualCircuit: { ...state.visualCircuit, steps: state.visualCircuit.steps.length > 1 ? state.visualCircuit.steps.slice(0, -1) : state.visualCircuit.steps }
+  })),
+  setVisualReadOnly: (ro) => set({ visualReadOnly: ro }),
+  compileVisualToQASM: () => {
+    const state = get();
+    const N = state.visualCircuit.qubits;
+    const lines: string[] = [
+      'OPENQASM 2.0;',
+      'include "qelib1.inc";',
+      `qreg q[${N}];`
+    ];
+    
+    const errors: string[] = [];
+    
+    // iterate columns
+    state.visualCircuit.steps.forEach((col, colIdx) => {
+      Object.entries(col).forEach(([rowIdx, node]) => {
+        const i = Number(rowIdx);
+        if (i >= N) return;
+        
+        // For two-qubit gates, emit only once (on control role or if no role)
+        if ((node.type === 'CNOT' || node.type === 'CZ') && node.role === 'target') return;
+        
+        try {
+          switch (node.type) {
+            case 'H': lines.push(`h q[${i}];`); break;
+            case 'X': lines.push(`x q[${i}];`); break;
+            case 'Z': lines.push(`z q[${i}];`); break;
+            case 'S': lines.push(`s q[${i}];`); break;
+            case 'T': lines.push(`t q[${i}];`); break;
+            case 'CNOT': 
+              if (!node.controls || !node.targets) {
+                errors.push(`Invalid CNOT at column ${colIdx + 1}, row ${i + 1}: missing controls or targets`);
+                break;
+              }
+              const cnotControl = node.controls[0];
+              const cnotTarget = node.targets[0];
+              if (cnotControl >= N || cnotTarget >= N) {
+                errors.push(`CNOT at column ${colIdx + 1}: qubit index out of range`);
+                break;
+              }
+              if (cnotControl === cnotTarget) {
+                errors.push(`CNOT at column ${colIdx + 1}: control and target cannot be the same qubit`);
+                break;
+              }
+              lines.push(`cx q[${cnotControl}], q[${cnotTarget}];`); 
+              break;
+            case 'CZ': 
+              if (!node.controls || !node.targets) {
+                errors.push(`Invalid CZ at column ${colIdx + 1}, row ${i + 1}: missing controls or targets`);
+                break;
+              }
+              const czControl = node.controls[0];
+              const czTarget = node.targets[0];
+              if (czControl >= N || czTarget >= N) {
+                errors.push(`CZ at column ${colIdx + 1}: qubit index out of range`);
+                break;
+              }
+              if (czControl === czTarget) {
+                errors.push(`CZ at column ${colIdx + 1}: control and target cannot be the same qubit`);
+                break;
+              }
+              lines.push(`cz q[${czControl}], q[${czTarget}];`); 
+              break;
+            default:
+              errors.push(`Unknown gate type: ${node.type} at column ${colIdx + 1}, row ${i + 1}`);
+          }
+        } catch (error) {
+          errors.push(`Error processing gate at column ${colIdx + 1}, row ${i + 1}: ${error}`);
+        }
+      });
+    });
+    
+    const qasm = lines.join('\n');
+    
+    // Log any validation errors
+    if (errors.length > 0) {
+      console.warn('Visual circuit compilation errors:', errors);
+    }
+    
+    set({ qasmCode: qasm });
+    return qasm;
+  },
+  selectActiveGate: (g) => set({ activeGate: g, pendingControl: null }),
+  clearPendingControl: () => set({ pendingControl: null }),
+  handleCellClick: (row, col) => set((state) => {
+    if (state.visualReadOnly) return {} as any;
+    const steps = state.visualCircuit.steps.slice();
+    const colMap = { ...steps[col] };
+    const existing = colMap[row];
+    
+    // If clicking an existing gate: delete it (and linked target/control if any)
+    if (existing) {
+      if ((existing.type === 'CNOT' || existing.type === 'CZ') && existing.linkId) {
+        // Remove linked peer
+        const peerRow = existing.role === 'control' ? existing.targets?.[0] : existing.controls?.[0];
+        if (peerRow !== undefined) {
+          const peerMap = { ...colMap };
+          delete peerMap[peerRow];
+          delete peerMap[row];
+          steps[col] = peerMap;
+        } else {
+          delete colMap[row];
+          steps[col] = colMap;
+        }
+      } else {
+        delete colMap[row];
+        steps[col] = colMap;
+      }
+      return { visualCircuit: { ...state.visualCircuit, steps }, pendingControl: null } as any;
+    }
+    
+    // No existing gate; place new based on activeGate
+    const g = state.activeGate;
+    if (!g) return {} as any;
+    
+    // Prevent overlap
+    if (colMap[row]) return {} as any;
+    
+    const id = `${g}-${col}-${Date.now()}`;
+    
+    if (g === 'CNOT' || g === 'CZ') {
+      // Two-step selection: first control, then target
+      if (state.pendingControl === null) {
+        // First click: set control qubit
+        return { pendingControl: row } as any;
+      } else {
+        const control = state.pendingControl;
+        const target = row;
+        
+        // Validation: control and target cannot be the same
+        if (target === control) {
+          console.warn(`${g} control and target cannot be the same qubit (Q${control})`);
+          return { pendingControl: null } as any; // Clear pending state
+        }
+        
+        // Validation: target cell must be empty
+        if (colMap[target]) {
+          console.warn(`Target position Q${target} is already occupied`);
+          return { pendingControl: null } as any; // Clear pending state
+        }
+        
+        // Validation: control cell must also be empty
+        if (colMap[control]) {
+          console.warn(`Control position Q${control} is already occupied`);
+          return { pendingControl: null } as any; // Clear pending state
+        }
+        
+        // All validations passed: place the two-qubit gate
+        const linkId = id;
+        colMap[control] = { 
+          id, 
+          type: g, 
+          controls: [control], 
+          targets: [target], 
+          role: 'control', 
+          linkId 
+        };
+        colMap[target] = { 
+          id, 
+          type: g, 
+          controls: [control], 
+          targets: [target], 
+          role: 'target', 
+          linkId 
+        };
+        steps[col] = colMap;
+        
+        return { 
+          visualCircuit: { ...state.visualCircuit, steps }, 
+          pendingControl: null 
+        } as any;
+      }
+    } else {
+      // Single-qubit gate
+      colMap[row] = { id, type: g, targets: [row] };
+      steps[col] = colMap;
+      return { visualCircuit: { ...state.visualCircuit, steps } } as any;
+    }
+  }),
 }));
 
 function generateInitialQubits(count: number): QubitState[] {

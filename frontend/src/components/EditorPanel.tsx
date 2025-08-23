@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useQuantumStore, PRESET_CIRCUITS } from '@/store/quantumStore';
 import { PlayIcon, PauseIcon, SquareIcon, InfoIcon } from 'lucide-react';
+import * as Tabs from '@radix-ui/react-tabs';
+import { VisualEditor } from './editor/VisualEditor.tsx';
 
 export const EditorPanel = () => {
   const { 
@@ -16,7 +18,9 @@ export const EditorPanel = () => {
     simulation,
     setSimulationStatus,
     resetSimulation,
-    runSimulation
+    runSimulation,
+    editorTab,
+    setEditorTab
   } = useQuantumStore();
   
   const handlePresetChange = (preset: string) => {
@@ -71,8 +75,8 @@ export const EditorPanel = () => {
             </Badge>
           </div>
         </div>
-        
-        {/* Preset Circuits */}
+
+        {/* Presets */}
         <div className="space-y-2">
           <Label htmlFor="preset">Circuit Presets</Label>
           <Select value={presetCircuit} onValueChange={handlePresetChange}>
@@ -91,26 +95,41 @@ export const EditorPanel = () => {
             </SelectContent>
           </Select>
         </div>
-        
-        {/* QASM Editor */}
-        <div className="space-y-2">
-          <Label htmlFor="qasm">OpenQASM 2.0 Code</Label>
-          <Textarea
-            id="qasm"
-            value={qasmCode}
-            onChange={(e) => setQasmCode(e.target.value)}
-            className="min-h-[200px] font-mono text-sm bg-input border-border"
-            placeholder="Enter your OpenQASM 2.0 code here..."
-          />
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <InfoIcon className="w-3 h-3" />
-              Gates: {validation.gateCount}
-            </span>
-            <span>Status: {validation.isValid ? 'Valid' : 'Invalid'}</span>
-          </div>
-        </div>
-        
+
+        {/* Tabs: Visual | Code */}
+  <Tabs.Root value={editorTab} onValueChange={(v) => setEditorTab(v as 'visual'|'code')} className="w-full">
+          <Tabs.List className="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground">
+            <Tabs.Trigger value="visual" className="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground">
+              Visual
+            </Tabs.Trigger>
+            <Tabs.Trigger value="code" className="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1 text-sm font-medium data-[state=active]:bg-background data-[state=active]:text-foreground">
+              Code
+            </Tabs.Trigger>
+          </Tabs.List>
+
+          <Tabs.Content value="visual" className="mt-4">
+            <VisualEditor />
+          </Tabs.Content>
+
+          <Tabs.Content value="code" className="mt-4 space-y-2">
+            <Label htmlFor="qasm">OpenQASM 2.0 Code</Label>
+            <Textarea
+              id="qasm"
+              value={qasmCode}
+              onChange={(e) => setQasmCode(e.target.value)}
+              className="min-h-[200px] font-mono text-sm bg-input border-border"
+              placeholder="Enter your OpenQASM 2.0 code here..."
+            />
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <InfoIcon className="w-3 h-3" />
+                Gates: {validation.gateCount}
+              </span>
+              <span>Status: {validation.isValid ? 'Valid' : 'Invalid'}</span>
+            </div>
+          </Tabs.Content>
+        </Tabs.Root>
+
         {/* Simulation Controls */}
         <div className="flex gap-2 pt-4 border-t border-border">
           <Button 
@@ -121,7 +140,7 @@ export const EditorPanel = () => {
             <PlayIcon className="w-4 h-4 mr-2" />
             {simulation.status === 'running' ? 'Running...' : 'Run Simulation'}
           </Button>
-          
+
           <Button 
             variant="outline" 
             onClick={handlePause}
@@ -130,7 +149,7 @@ export const EditorPanel = () => {
           >
             <PauseIcon className="w-4 h-4" />
           </Button>
-          
+
           <Button 
             variant="outline" 
             onClick={handleStop}

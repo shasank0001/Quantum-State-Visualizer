@@ -481,12 +481,12 @@ function InteractiveBlochSphere({ qubit, showPhase, showState }: InteractiveBloc
       <group ref={vectorRef}>
         <VectorArrow
           start={[0, 0, 0]}
-          end={[qubit.bloch.x, qubit.bloch.y, qubit.bloch.z]}
+          end={[qubit.bloch.x, qubit.bloch.z, qubit.bloch.y]}
           color="#00ffff"
           lineWidth={10}
         />
         {/* Add a small sphere at the tip for visibility */}
-        <mesh position={[qubit.bloch.x, qubit.bloch.y, qubit.bloch.z]} renderOrder={1002}>
+        <mesh position={[qubit.bloch.x, qubit.bloch.z, qubit.bloch.y]} renderOrder={1002}>
           <sphereGeometry args={[0.06, 16, 8]} />
           <meshBasicMaterial 
             color="#00ffff"

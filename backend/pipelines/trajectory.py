@@ -1,14 +1,14 @@
 """
 Trajectory-based simulation pipeline for quantum circuits with measurements.
-Implementation based on dev_plane.md specifications.
+Implements true Monte Carlo sampling with projective measurement collapse per shot,
+matching the dev_plan specification (stochastic trajectories averaged to density).
 """
 
 import numpy as np
 import time
 from typing import Dict, Any, List
-from qiskit import QuantumCircuit, ClassicalRegister
-from qiskit_aer import AerSimulator
-from qiskit.quantum_info import DensityMatrix
+from qiskit import QuantumCircuit
+from qiskit.quantum_info import DensityMatrix, Statevector
 
 from pipelines.base import SimulationPipeline, SimulationError, UnsupportedCircuitError
 from utils import compute_bloch_vector, compute_purity, clip_tiny_values
@@ -33,13 +33,6 @@ class TrajectoryPipeline(SimulationPipeline):
         self.max_qubits = 16  # As specified in routing logic
         self.min_shots = 100   # Minimum for meaningful statistics
         self.max_shots = 100000  # Practical upper limit
-        
-        # Initialize Aer simulator
-        try:
-            self.simulator = AerSimulator(method='statevector')
-        except Exception as e:
-            self.logger.warning(f"Failed to initialize Aer simulator: {e}")
-            self.simulator = None
     
     def validate_circuit(self, circuit: QuantumCircuit) -> bool:
         """
@@ -51,11 +44,6 @@ class TrajectoryPipeline(SimulationPipeline):
         - Simulator must be available
         """
         if not super().validate_circuit(circuit):
-            return False
-        
-        # Check simulator availability
-        if self.simulator is None:
-            self.logger.error("Aer simulator not available")
             return False
         
         # Check qubit limit
@@ -103,10 +91,8 @@ class TrajectoryPipeline(SimulationPipeline):
             processed_circuit = self.preprocess_circuit(circuit)
             
             # Run trajectory simulation
-            if self._has_measurements(processed_circuit):
-                results = self._run_measurement_trajectories(processed_circuit, shots)
-            else:
-                results = self._run_unitary_trajectories(processed_circuit, shots)
+            # Always run trajectory engine (unitary circuits will be consistent across shots)
+            results = self._run_trajectories(processed_circuit, shots)
             
             execution_time = time.time() - start_time
             self.log_simulation_end(execution_time, processed_circuit.num_qubits)
@@ -125,193 +111,150 @@ class TrajectoryPipeline(SimulationPipeline):
             for instr in circuit.data
         )
     
-    def _run_measurement_trajectories(self, circuit: QuantumCircuit, shots: int) -> Dict[int, Dict[str, Any]]:
+    def _run_trajectories(self, circuit: QuantumCircuit, shots: int) -> Dict[int, Dict[str, Any]]:
         """
-        Run trajectories for circuits with measurements.
-        Each trajectory samples a specific measurement outcome path.
+        Run Monte Carlo trajectories with projective measurement collapse.
+        Each trajectory walks through the circuit instruction-by-instruction,
+        sampling measurement outcomes and collapsing the statevector.
         """
         n_qubits = circuit.num_qubits
-        
+
         # Accumulate density matrices from all trajectories
         accumulated_rhos = {i: np.zeros((2, 2), dtype=np.complex128) for i in range(n_qubits)}
         valid_trajectories = 0
-        
-        # Run individual trajectories
-        for trajectory in range(shots):
+
+        for t in range(shots):
             try:
-                # Run single trajectory with Aer simulator
-                traj_result = self._simulate_single_trajectory(circuit)
-                
-                if traj_result is not None:
-                    # Extract reduced density matrices for each qubit
-                    for qubit_id in range(n_qubits):
-                        rho_traj = self._extract_qubit_state(traj_result, n_qubits, qubit_id)
-                        accumulated_rhos[qubit_id] += rho_traj
-                    
-                    valid_trajectories += 1
-                
+                state, clbits = self._simulate_single_trajectory(circuit)
+                if state is None:
+                    continue
+                # Extract reduced density matrices for each qubit and accumulate
+                state_array = state.data if isinstance(state, Statevector) else np.asarray(state)
+                for qubit_id in range(n_qubits):
+                    rho_traj = self._compute_reduced_density_matrix(state_array, n_qubits, qubit_id)
+                    accumulated_rhos[qubit_id] += rho_traj
+                valid_trajectories += 1
             except Exception as e:
-                self.logger.warning(f"Trajectory {trajectory} failed: {e}")
+                self.logger.warning(f"Trajectory {t} failed: {e}")
                 continue
-        
+
         if valid_trajectories == 0:
             raise SimulationError("All trajectories failed", pipeline=self.name)
-        
-        # Average over valid trajectories
+
+        # Average and produce results
         results = {}
         for qubit_id in range(n_qubits):
             avg_rho = accumulated_rhos[qubit_id] / valid_trajectories
-            
-            # Ensure proper normalization
-            trace = np.trace(avg_rho)
-            if abs(trace) > 1e-10:
-                avg_rho = avg_rho / trace
-            
-            # Compute observables
+            # Normalize to trace 1
+            tr = np.trace(avg_rho)
+            if abs(tr) > 1e-12:
+                avg_rho = avg_rho / tr
             bloch_coords = compute_bloch_vector(avg_rho)
             purity = compute_purity(avg_rho)
-            
             results[qubit_id] = {
                 'bloch': bloch_coords,
                 'purity': purity,
                 'rho': self._format_density_matrix(avg_rho)
             }
-        
+
         self.logger.info(f"Completed {valid_trajectories}/{shots} trajectories successfully")
         return results
     
     def _run_unitary_trajectories(self, circuit: QuantumCircuit, shots: int) -> Dict[int, Dict[str, Any]]:
-        """
-        Run trajectories for unitary circuits (no measurements).
-        In this case, all trajectories give the same result, so we can optimize.
-        """
-        try:
-            # For unitary circuits, run once and return exact result
-            from qiskit.quantum_info import Statevector
-            statevector = Statevector.from_instruction(circuit)
-            state_array = statevector.data
-            
-            n_qubits = circuit.num_qubits
-            results = {}
-            
-            for qubit_id in range(n_qubits):
-                # Compute reduced density matrix
-                rho = self._compute_reduced_density_matrix(state_array, n_qubits, qubit_id)
-                
-                # Compute observables  
-                bloch_coords = compute_bloch_vector(rho)
-                purity = compute_purity(rho)
-                
-                results[qubit_id] = {
-                    'bloch': bloch_coords,
-                    'purity': purity,
-                    'rho': self._format_density_matrix(rho)
-                }
-            
-            return results
-            
-        except Exception as e:
-            # Fallback to single trajectory method
-            self.logger.warning(f"Unitary optimization failed: {e}, falling back to trajectory method")
-            return self._run_measurement_trajectories(circuit, 1)
+        """Deprecated in favor of _run_trajectories which handles both cases."""
+        return self._run_trajectories(circuit, max(1, shots))
     
     def _simulate_single_trajectory(self, circuit: QuantumCircuit):
         """
-        Simulate a single quantum trajectory using Aer simulator.
-        For circuits with measurements, we need special handling.
+        Simulate a single trajectory with explicit projective measurement collapse.
+        Returns (Statevector, classical_bits_dict).
         """
         try:
-            if self.simulator is None:
-                self.logger.error("Aer simulator is not initialized")
-                return None
-                
-            # Make a copy for modification
-            traj_circuit = circuit.copy()
-            
-            # For circuits with measurements, use the quantum_info_simulator method
-            from qiskit import transpile
-            from qiskit.quantum_info import Statevector
-            
-            # Remove measurements to get the pre-measurement state
-            # and handle measurements separately
-            return self._simulate_with_measurement_handling(traj_circuit)
-                
+            n_qubits = circuit.num_qubits
+            # Start in |0...0>
+            state = Statevector.from_int(0, 2**n_qubits)
+            # Classical bits mapping: clbit index -> 0/1
+            clbits: Dict[int, int] = {}
+
+            # Build a helper mapping from circuit qubits/clbits to indices
+            qubit_index = {qb: idx for idx, qb in enumerate(circuit.qubits)}
+            clbit_index = {cb: idx for idx, cb in enumerate(circuit.clbits)}
+
+            for instr in circuit.data:
+                name = instr.operation.name.lower()
+
+                # Handle classical condition (if present)
+                if getattr(instr.operation, "condition", None) is not None:
+                    cond = instr.operation.condition  # (ClassicalRegister or Clbit, int)
+                    try:
+                        reg, val = cond
+                        # Compute integer value of bits in this register
+                        # If reg is a single Clbit, treat it as 1-bit register
+                        if hasattr(reg, "bits"):
+                            bits = reg.bits
+                        else:
+                            bits = [reg]
+                        current = 0
+                        for i, b in enumerate(bits):
+                            idx = clbit_index.get(b, None)
+                            bitval = clbits.get(idx, 0) if idx is not None else 0
+                            current |= (bitval & 1) << i
+                        if current != val:
+                            # Skip this instruction if condition not satisfied
+                            continue
+                    except Exception:
+                        # If condition parsing fails, conservatively skip
+                        continue
+
+                if name == 'measure':
+                    # measurement: measure q -> c
+                    q = instr.qubits[0]
+                    c = instr.clbits[0] if instr.clbits else None
+                    q_idx = qubit_index[q]
+                    outcome, state = self._measure_and_collapse(state.data, n_qubits, q_idx)
+                    if c is not None:
+                        c_idx = clbit_index.get(c, None)
+                        if c_idx is not None:
+                            clbits[c_idx] = int(outcome)
+                    continue
+
+                if name == 'reset':
+                    q = instr.qubits[0]
+                    q_idx = qubit_index[q]
+                    state = Statevector(self._reset_qubit(state.data, n_qubits, q_idx))
+                    continue
+
+                # Unitary operation: evolve state by this operation
+                try:
+                    op = instr.operation
+                    # Build a minimal circuit with the same number of qubits, append op at the right qargs
+                    tmp = QuantumCircuit(n_qubits)
+                    tmp.append(op, [qubit_index[q] for q in instr.qubits])
+                    state = state.evolve(tmp)
+                except Exception as e:
+                    # If evolve fails, try to_matrix fallback
+                    try:
+                        mat = op.to_matrix()
+                        qargs = [qubit_index[q] for q in instr.qubits]
+                        state = Statevector(self._apply_matrix_to_qubits(state.data, mat, n_qubits, qargs))
+                    except Exception as e2:
+                        raise SimulationError(f"Failed to apply instruction {name}: {e2}")
+
+            return state, clbits
+
         except Exception as e:
             self.logger.error(f"Single trajectory simulation failed: {e}")
-            import traceback
-            self.logger.error(f"Full traceback: {traceback.format_exc()}")
-            return None
+            return None, {}
 
-    def _simulate_with_measurement_handling(self, circuit: QuantumCircuit):
-        """Handle circuits with measurements by breaking them into segments"""
-        try:
-            # For now, let's use a simpler approach: 
-            # simulate the unitary part and handle measurements as decoherence
-            unitary_ops = []
-            measurement_ops = []
-            
-            for instr in circuit.data:
-                if instr.operation.name.lower() in ['measure', 'reset']:
-                    measurement_ops.append(instr)
-                else:
-                    unitary_ops.append(instr)
-            
-            if not unitary_ops:
-                # No unitary operations, return a random mixed state
-                n_qubits = circuit.num_qubits
-                from qiskit.quantum_info import random_statevector
-                return random_statevector(2**n_qubits, seed=None)
-            
-            # Create circuit with only unitary operations
-            from qiskit import QuantumCircuit
-            unitary_circuit = QuantumCircuit(circuit.num_qubits)
-            
-            for instr in unitary_ops:
-                unitary_circuit.append(instr.operation, instr.qubits)
-            
-            # Simulate the unitary part
-            from qiskit.quantum_info import Statevector
-            state = Statevector.from_instruction(unitary_circuit)
-            
-            # Add decoherence effects for measurements (simplified model)
-            if measurement_ops:
-                # Apply decoherence by adding some randomness
-                state_array = state.data
-                noise_factor = 0.1 * len(measurement_ops)  # More measurements = more noise
-                state_array = state_array + noise_factor * (np.random.random(state_array.shape) + 1j * np.random.random(state_array.shape))
-                state_array = state_array / np.linalg.norm(state_array)
-                state = Statevector(state_array)
-            
-            return state
-            
-        except Exception as e:
-            self.logger.error(f"Measurement handling failed: {e}")
-            import traceback
-            self.logger.error(f"Full traceback: {traceback.format_exc()}")
-            return None
+    # Removed simplified measurement handling in favor of explicit collapse engine
     
     def _extract_qubit_state(self, trajectory_result, n_qubits: int, qubit_id: int) -> np.ndarray:
-        """
-        Extract single qubit density matrix from trajectory result.
-        """
+        """Extract single qubit density matrix from trajectory result (statevector)."""
         try:
-            if hasattr(trajectory_result, 'data'):
-                # Result is a statevector
-                state_array = trajectory_result.data
-                return self._compute_reduced_density_matrix(state_array, n_qubits, qubit_id)
-            else:
-                # Result might already be a density matrix
-                dm = DensityMatrix(trajectory_result)
-                qubits_to_trace = [j for j in range(n_qubits) if j != qubit_id]
-                if qubits_to_trace:
-                    rho_reduced = dm.partial_trace(qubits_to_trace)
-                    return rho_reduced.data
-                else:
-                    return dm.data
-                    
+            state_array = trajectory_result.data if isinstance(trajectory_result, Statevector) else np.asarray(trajectory_result)
+            return self._compute_reduced_density_matrix(state_array, n_qubits, qubit_id)
         except Exception as e:
             self.logger.warning(f"Failed to extract qubit state: {e}")
-            # Return maximally mixed state as fallback
             return np.array([[0.5+0j, 0.0+0j], [0.0+0j, 0.5+0j]], dtype=np.complex128)
     
     def _compute_reduced_density_matrix(self, state_vector: np.ndarray, n_qubits: int, 
@@ -334,6 +277,91 @@ class TrajectoryPipeline(SimulationPipeline):
                     rho[target_i, target_j] += state_vector[i].conj() * state_vector[j]
         
         return rho
+
+    def _measure_and_collapse(self, state_vector: np.ndarray, n_qubits: int, target_qubit: int):
+        """
+        Perform a projective measurement on target_qubit, return (outcome, new_state_vector).
+        """
+        # Compute probabilities for |0> and |1> on target qubit
+        p0 = 0.0
+        p1 = 0.0
+        dim = 2 ** n_qubits
+        mask = 1 << target_qubit
+        for idx in range(dim):
+            amp = state_vector[idx]
+            if (idx & mask) == 0:
+                p0 += (amp.real * amp.real + amp.imag * amp.imag)
+            else:
+                p1 += (amp.real * amp.real + amp.imag * amp.imag)
+        # Sample outcome
+        r = np.random.random()
+        outcome = 0 if r < p0 else 1
+        # Collapse
+        new_state = np.zeros_like(state_vector)
+        norm = np.sqrt(p0 if outcome == 0 else p1) if (p0 + p1) > 0 else 1.0
+        if norm == 0:
+            # Degenerate case: state has zero probability; return unchanged
+            return outcome, Statevector(state_vector)
+        for idx in range(dim):
+            if ((idx & mask) == 0 and outcome == 0) or ((idx & mask) != 0 and outcome == 1):
+                new_state[idx] = state_vector[idx] / norm
+        return outcome, Statevector(new_state)
+
+    def _reset_qubit(self, state_vector: np.ndarray, n_qubits: int, target_qubit: int) -> np.ndarray:
+        """Reset target qubit to |0> state by zeroing |1> components and renormalizing."""
+        dim = 2 ** n_qubits
+        mask = 1 << target_qubit
+        new_state = state_vector.copy()
+        # Zero out |1> components
+        for idx in range(dim):
+            if (idx & mask) != 0:
+                new_state[idx] = 0.0 + 0.0j
+        # Renormalize
+        norm = np.linalg.norm(new_state)
+        if norm > 0:
+            new_state = new_state / norm
+        return new_state
+
+    def _apply_matrix_to_qubits(self, state_vector: np.ndarray, gate_matrix: np.ndarray, n_qubits: int, qargs: List[int]) -> np.ndarray:
+        """
+        Apply a small gate_matrix acting on qargs to the full state_vector.
+        gate_matrix has dimension 2^k x 2^k where k=len(qargs).
+        """
+        k = len(qargs)
+        assert gate_matrix.shape == (2**k, 2**k)
+        # Sort qargs for consistent bit order (little-endian: qubit 0 is LSB)
+        qargs_sorted = list(qargs)
+        # Map basis index regrouping
+        dim = 2 ** n_qubits
+        new_state = np.zeros_like(state_vector)
+
+        # Precompute bit masks and positions
+        other_qubits = [q for q in range(n_qubits) if q not in qargs_sorted]
+        # Iterate over all basis states by splitting into target subspace and others
+        for base in range(2 ** len(other_qubits)):
+            # Build a template index with other qubits filled from base
+            template = 0
+            for i, q in enumerate(other_qubits):
+                if (base >> i) & 1:
+                    template |= (1 << q)
+            # Build the 2^k block of amplitudes corresponding to this template
+            block = np.zeros(2**k, dtype=complex)
+            for sub in range(2 ** k):
+                idx = template
+                for j, q in enumerate(qargs_sorted):
+                    if (sub >> j) & 1:
+                        idx |= (1 << q)
+                block[sub] = state_vector[idx]
+            # Apply gate to block
+            block_out = gate_matrix @ block
+            # Scatter back
+            for sub in range(2 ** k):
+                idx = template
+                for j, q in enumerate(qargs_sorted):
+                    if (sub >> j) & 1:
+                        idx |= (1 << q)
+                new_state[idx] = block_out[sub]
+        return new_state
     
     def _format_density_matrix(self, rho: np.ndarray) -> list:
         """Format density matrix for JSON serialization."""
