@@ -8,7 +8,10 @@ import { useQuantumStore } from '@/store/quantumStore';
 import { AtomIcon, InfoIcon } from 'lucide-react';
 
 const Index = () => {
-  const { qubits, simulation, editorTab } = useQuantumStore();
+  const { qubits, simulation, editorTab, codeEditorMode } = useQuantumStore();
+  
+  // Determine if we need expanded layout for Monaco editor
+  const needsExpandedLayout = editorTab === 'code' && codeEditorMode === 'monaco';
   
   return (
     <div className="min-h-screen bg-background">
@@ -46,27 +49,32 @@ const Index = () => {
       
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6">
-        {editorTab === 'visual' ? (
-          // In Visual mode, give the editor full-width and move states below
-          <div className="flex flex-col gap-6 mb-6">
-            <div>
-              <EditorPanel />
-            </div>
-            <div>
-              <CanvasGrid />
-            </div>
+        <div className={`transition-all duration-700 ease-in-out ${
+          editorTab === 'visual' 
+            ? 'flex flex-col gap-6 mb-6' 
+            : needsExpandedLayout
+            ? 'flex flex-col gap-6 mb-6'  // Full width for Monaco editor
+            : 'grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6'
+        }`}>
+          <div className={`transition-all duration-700 ease-in-out ${
+            editorTab === 'visual' 
+              ? '' 
+              : needsExpandedLayout 
+              ? '' 
+              : 'lg:col-span-1'
+          }`}>
+            <EditorPanel />
           </div>
-        ) : (
-          // In Code mode, keep the side-by-side layout
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-            <div className="lg:col-span-1">
-              <EditorPanel />
-            </div>
-            <div className="lg:col-span-2">
-              <CanvasGrid />
-            </div>
+          <div className={`transition-all duration-700 ease-in-out ${
+            editorTab === 'visual' 
+              ? '' 
+              : needsExpandedLayout 
+              ? '' 
+              : 'lg:col-span-2'
+          }`}>
+            <CanvasGrid />
           </div>
-        )}
+        </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Inspector */}

@@ -159,4 +159,93 @@
     font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
     font-variant-numeric: tabular-nums;
   }
+
+  /* Enhanced transition animations */
+  .transition-layout {
+    transition: all 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .transition-content {
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .transition-tab {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Animation keyframes */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slideInLeft {
+    from { opacity: 0; transform: translateX(-20px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @keyframes slideInRight {
+    from { opacity: 0; transform: translateX(20px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @keyframes slideInTop {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slideInBottom {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes zoomIn {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  /* Animation utilities */
+  .animate-in {
+    animation-fill-mode: both;
+  }
+
+  .fade-in {
+    animation: fadeIn 0.5s ease-out;
+  }
+
+  .slide-in-from-left {
+    animation: slideInLeft 0.3s ease-out;
+  }
+
+  .slide-in-from-right {
+    animation: slideInRight 0.7s ease-out;
+  }
+
+  .slide-in-from-top {
+    animation: slideInTop 0.3s ease-out;
+  }
+
+  .slide-in-from-bottom {
+    animation: slideInBottom 0.3s ease-out;
+  }
+
+  .zoom-in {
+    animation: zoomIn 0.2s ease-out;
+  }
+
+  /* Enhanced quantum animations */
+  .animate-quantum-pulse {
+    animation: quantum-pulse 2s infinite;
+  }
+
+  @keyframes quantum-pulse {
+    0%, 100% { 
+      opacity: 1; 
+      box-shadow: 0 0 20px hsl(var(--quantum-primary) / 0.3);
+    }
+    50% { 
+      opacity: 0.8; 
+      box-shadow: 0 0 30px hsl(var(--quantum-primary) / 0.6);
+    }
+  }
 }

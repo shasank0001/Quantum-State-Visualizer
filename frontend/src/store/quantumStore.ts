@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { quantumAPI, type SimulationRequest, type QubitResponse } from '@/lib/api';
+import { QASMValidator, type QASMValidationResult, type VisualCircuitValidationResult } from '@/lib/qasmValidator';
 
 export interface BlochState {
   x: number;
@@ -36,6 +37,9 @@ export interface QuantumState {
   qasmCode: string;
   presetCircuit: string;
   editorTab: 'visual' | 'code';
+  codeEditorMode: 'simple' | 'monaco';
+  monacoEditorFullscreen: boolean;
+  uploadedFileName: string | null;
 
   // Visual editor state
   visualCircuit: {
@@ -45,6 +49,10 @@ export interface QuantumState {
   visualReadOnly: boolean;
   activeGate: null | 'H'|'X'|'Z'|'S'|'T'|'CNOT'|'CZ';
   pendingControl: number | null;
+  
+  // Validation state
+  qasmValidation: QASMValidationResult | null;
+  visualValidation: VisualCircuitValidationResult | null;
   
   // Actions
   setQubits: (qubits: QubitState[]) => void;
@@ -68,6 +76,16 @@ export interface QuantumState {
   clearPendingControl: () => void;
   handleCellClick: (row: number, col: number) => void;
   setEditorTab: (tab: 'visual' | 'code') => void;
+
+  // Code editor actions
+  setCodeEditorMode: (mode: 'simple' | 'monaco') => void;
+  toggleMonacoFullscreen: () => void;
+  setUploadedFileName: (filename: string | null) => void;
+  loadFileContent: (content: string, filename: string) => void;
+  
+  // Validation actions
+  validateQASM: (qasm?: string) => QASMValidationResult;
+  validateVisualCircuit: () => VisualCircuitValidationResult;
 }
 
 export const useQuantumStore = create<QuantumState>((set, get) => ({
@@ -93,6 +111,9 @@ cx q[0], q[1];
 cx q[1], q[2];`,
   presetCircuit: 'ghz',
   editorTab: 'visual',
+  codeEditorMode: 'simple',
+  monacoEditorFullscreen: false,
+  uploadedFileName: null,
 
   visualCircuit: {
     qubits: 3,
@@ -101,6 +122,10 @@ cx q[1], q[2];`,
   visualReadOnly: false,
   activeGate: null,
   pendingControl: null,
+  
+  // Validation state
+  qasmValidation: null,
+  visualValidation: null,
   
   // Actions
   setQubits: (qubits) => set({ qubits }),
@@ -224,6 +249,16 @@ function parseComplexNumber(complexStr: string): number {
   }),
 
   setEditorTab: (tab) => set({ editorTab: tab }),
+  
+  // Code editor actions
+  setCodeEditorMode: (mode) => set({ codeEditorMode: mode }),
+  toggleMonacoFullscreen: () => set((state) => ({ monacoEditorFullscreen: !state.monacoEditorFullscreen })),
+  setUploadedFileName: (filename) => set({ uploadedFileName: filename }),
+  loadFileContent: (content, filename) => set({ 
+    qasmCode: content, 
+    uploadedFileName: filename,
+    codeEditorMode: 'simple' // Switch back to simple editor after upload
+  }),
   addColumn: () => set((state) => ({
     visualCircuit: { ...state.visualCircuit, steps: [...state.visualCircuit.steps, {}] }
   })),
@@ -234,6 +269,16 @@ function parseComplexNumber(complexStr: string): number {
   compileVisualToQASM: () => {
     const state = get();
     const N = state.visualCircuit.qubits;
+    
+    // First validate the visual circuit
+    const visualValidation = QASMValidator.validateVisualCircuit(state.visualCircuit);
+    set({ visualValidation });
+    
+    if (!visualValidation.isValid) {
+      console.error('Visual circuit validation failed:', visualValidation.errors);
+      // Continue compilation but with warnings
+    }
+    
     const lines: string[] = [
       'OPENQASM 2.0;',
       'include "qelib1.inc";',
@@ -242,52 +287,109 @@ function parseComplexNumber(complexStr: string): number {
     
     const errors: string[] = [];
     
-    // iterate columns
+    // iterate columns with enhanced validation
     state.visualCircuit.steps.forEach((col, colIdx) => {
       Object.entries(col).forEach(([rowIdx, node]) => {
         const i = Number(rowIdx);
-        if (i >= N) return;
+        if (i >= N) {
+          errors.push(`Qubit index ${i} out of bounds (max: ${N-1}) at column ${colIdx + 1}`);
+          return;
+        }
         
         // For two-qubit gates, emit only once (on control role or if no role)
         if ((node.type === 'CNOT' || node.type === 'CZ') && node.role === 'target') return;
         
         try {
           switch (node.type) {
-            case 'H': lines.push(`h q[${i}];`); break;
-            case 'X': lines.push(`x q[${i}];`); break;
-            case 'Z': lines.push(`z q[${i}];`); break;
-            case 'S': lines.push(`s q[${i}];`); break;
-            case 'T': lines.push(`t q[${i}];`); break;
+            case 'H': 
+              if (i < 0 || i >= N) {
+                errors.push(`H gate qubit index ${i} out of bounds at column ${colIdx + 1}`);
+                break;
+              }
+              lines.push(`h q[${i}];`); 
+              break;
+            case 'X': 
+              if (i < 0 || i >= N) {
+                errors.push(`X gate qubit index ${i} out of bounds at column ${colIdx + 1}`);
+                break;
+              }
+              lines.push(`x q[${i}];`); 
+              break;
+            case 'Z': 
+              if (i < 0 || i >= N) {
+                errors.push(`Z gate qubit index ${i} out of bounds at column ${colIdx + 1}`);
+                break;
+              }
+              lines.push(`z q[${i}];`); 
+              break;
+            case 'S': 
+              if (i < 0 || i >= N) {
+                errors.push(`S gate qubit index ${i} out of bounds at column ${colIdx + 1}`);
+                break;
+              }
+              lines.push(`s q[${i}];`); 
+              break;
+            case 'T': 
+              if (i < 0 || i >= N) {
+                errors.push(`T gate qubit index ${i} out of bounds at column ${colIdx + 1}`);
+                break;
+              }
+              lines.push(`t q[${i}];`); 
+              break;
             case 'CNOT': 
-              if (!node.controls || !node.targets) {
-                errors.push(`Invalid CNOT at column ${colIdx + 1}, row ${i + 1}: missing controls or targets`);
+              if (!node.controls || !node.targets || !Array.isArray(node.controls) || !Array.isArray(node.targets)) {
+                errors.push(`Invalid CNOT at column ${colIdx + 1}, row ${i + 1}: missing or malformed controls/targets`);
+                break;
+              }
+              if (node.controls.length === 0 || node.targets.length === 0) {
+                errors.push(`Invalid CNOT at column ${colIdx + 1}, row ${i + 1}: empty controls or targets array`);
                 break;
               }
               const cnotControl = node.controls[0];
               const cnotTarget = node.targets[0];
-              if (cnotControl >= N || cnotTarget >= N) {
-                errors.push(`CNOT at column ${colIdx + 1}: qubit index out of range`);
+              if (typeof cnotControl !== 'number' || typeof cnotTarget !== 'number') {
+                errors.push(`Invalid CNOT at column ${colIdx + 1}: control or target is not a number`);
+                break;
+              }
+              if (cnotControl < 0 || cnotControl >= N) {
+                errors.push(`CNOT control Q${cnotControl} out of bounds at column ${colIdx + 1} (valid: 0-${N-1})`);
+                break;
+              }
+              if (cnotTarget < 0 || cnotTarget >= N) {
+                errors.push(`CNOT target Q${cnotTarget} out of bounds at column ${colIdx + 1} (valid: 0-${N-1})`);
                 break;
               }
               if (cnotControl === cnotTarget) {
-                errors.push(`CNOT at column ${colIdx + 1}: control and target cannot be the same qubit`);
+                errors.push(`CNOT control and target cannot be the same qubit (Q${cnotControl}) at column ${colIdx + 1}`);
                 break;
               }
               lines.push(`cx q[${cnotControl}], q[${cnotTarget}];`); 
               break;
             case 'CZ': 
-              if (!node.controls || !node.targets) {
-                errors.push(`Invalid CZ at column ${colIdx + 1}, row ${i + 1}: missing controls or targets`);
+              if (!node.controls || !node.targets || !Array.isArray(node.controls) || !Array.isArray(node.targets)) {
+                errors.push(`Invalid CZ at column ${colIdx + 1}, row ${i + 1}: missing or malformed controls/targets`);
+                break;
+              }
+              if (node.controls.length === 0 || node.targets.length === 0) {
+                errors.push(`Invalid CZ at column ${colIdx + 1}, row ${i + 1}: empty controls or targets array`);
                 break;
               }
               const czControl = node.controls[0];
               const czTarget = node.targets[0];
-              if (czControl >= N || czTarget >= N) {
-                errors.push(`CZ at column ${colIdx + 1}: qubit index out of range`);
+              if (typeof czControl !== 'number' || typeof czTarget !== 'number') {
+                errors.push(`Invalid CZ at column ${colIdx + 1}: control or target is not a number`);
+                break;
+              }
+              if (czControl < 0 || czControl >= N) {
+                errors.push(`CZ control Q${czControl} out of bounds at column ${colIdx + 1} (valid: 0-${N-1})`);
+                break;
+              }
+              if (czTarget < 0 || czTarget >= N) {
+                errors.push(`CZ target Q${czTarget} out of bounds at column ${colIdx + 1} (valid: 0-${N-1})`);
                 break;
               }
               if (czControl === czTarget) {
-                errors.push(`CZ at column ${colIdx + 1}: control and target cannot be the same qubit`);
+                errors.push(`CZ control and target cannot be the same qubit (Q${czControl}) at column ${colIdx + 1}`);
                 break;
               }
               lines.push(`cz q[${czControl}], q[${czTarget}];`); 
@@ -303,9 +405,19 @@ function parseComplexNumber(complexStr: string): number {
     
     const qasm = lines.join('\n');
     
-    // Log any validation errors
+    // Validate the generated QASM
+    const qasmValidation = QASMValidator.validateQASM(qasm);
+    set({ qasmValidation });
+    
+    // Log compilation results
     if (errors.length > 0) {
-      console.warn('Visual circuit compilation errors:', errors);
+      console.error('Visual circuit compilation errors:', errors);
+    }
+    if (qasmValidation.errors.length > 0) {
+      console.error('Generated QASM validation errors:', qasmValidation.errors);
+    }
+    if (qasmValidation.warnings.length > 0) {
+      console.warn('Generated QASM validation warnings:', qasmValidation.warnings);
     }
     
     set({ qasmCode: qasm });
@@ -313,6 +425,19 @@ function parseComplexNumber(complexStr: string): number {
   },
   selectActiveGate: (g) => set({ activeGate: g, pendingControl: null }),
   clearPendingControl: () => set({ pendingControl: null }),
+  
+  validateQASM: (qasmCode: string) => {
+    const validation = QASMValidator.validateQASM(qasmCode);
+    set({ qasmValidation: validation });
+    return validation;
+  },
+
+  validateVisualCircuit: () => {
+    const state = get();
+    const validation = QASMValidator.validateVisualCircuit(state.visualCircuit);
+    set({ visualValidation: validation });
+    return validation;
+  },
   handleCellClick: (row, col) => set((state) => {
     if (state.visualReadOnly) return {} as any;
     const steps = state.visualCircuit.steps.slice();
