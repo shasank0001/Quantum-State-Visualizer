@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useQuantumStore } from '@/store/quantumStore';
 import { AtomIcon, InfoIcon } from 'lucide-react';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 const Index = () => {
   const { qubits, simulation, editorTab, codeEditorMode } = useQuantumStore();
@@ -42,6 +43,7 @@ const Index = () => {
               <Button variant="ghost" size="sm" className="hover:bg-accent">
                 <InfoIcon className="w-4 h-4" />
               </Button>
+              <ThemeToggle />
             </div>
           </div>
         </div>

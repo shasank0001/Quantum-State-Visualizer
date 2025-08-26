@@ -13,6 +13,8 @@ import asyncio
 import json
 import logging
 from datetime import datetime
+import os
+from dotenv import load_dotenv
 
 from schemas import (
     SimulationRequest,
@@ -85,6 +87,19 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+# Load .env if present
+load_dotenv()
+
+# Optional Gemini client (loaded lazily)
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+print(GOOGLE_API_KEY)
+try:
+    import google.generativeai as genai  # type: ignore
+    _HAS_GEMINI = True
+except Exception:
+    _HAS_GEMINI = False
+
 @app.get("/")
 async def root():
     """Health check endpoint"""
@@ -101,8 +116,69 @@ async def health_check():
     return {
         "status": "healthy",
         "pipelines": {name: "available" for name in PIPELINES.keys()},
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
+        "chat": {
+            "provider": "google-gemini",
+            "model": GEMINI_MODEL,
+            "configured": bool(GOOGLE_API_KEY) and _HAS_GEMINI,
+        },
     }
+
+
+class ChatRequest(BaseModel):
+    messages: List[Dict[str, str]] = Field(
+        description="Chat history as a list of {role, content} messages (roles: user|assistant)")
+    system: Optional[str] = Field(default="You are a concise assistant for a quantum circuits visualizer app.")
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    model: str = GEMINI_MODEL
+
+
+@app.post("/chat/completions", response_model=ChatResponse)
+async def chat_completions(payload: ChatRequest):
+    """Lightweight chat endpoint backed by Gemini 2.5 Flash.
+    Requires GOOGLE_API_KEY env and google-generativeai package.
+    """
+    if not _HAS_GEMINI or not GOOGLE_API_KEY:
+        raise HTTPException(status_code=501, detail="Chat is not configured on server")
+
+    try:
+        genai.configure(api_key=GOOGLE_API_KEY)
+        model = genai.GenerativeModel(GEMINI_MODEL, system_instruction=payload.system)
+        # Convert messages to the expected format
+        history = []
+        for m in payload.messages:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            if role == "assistant":
+                history.append({"role": "model", "parts": [content]})
+            else:
+                history.append({"role": "user", "parts": [content]})
+
+        chat = model.start_chat(history=history)
+        result = await asyncio.get_event_loop().run_in_executor(None, chat.send_message, payload.messages[-1]["content"] if payload.messages else "Hello")
+        text = getattr(result, "text", None) or (result.candidates[0].content.parts[0].text if getattr(result, "candidates", None) else "")
+        if not text:
+            text = "(No response)"
+        return ChatResponse(reply=text)
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Map common Google API errors to HTTP responses
+        try:
+            from google.api_core.exceptions import ResourceExhausted, PermissionDenied, InvalidArgument  # type: ignore
+            if isinstance(e, ResourceExhausted):
+                raise HTTPException(status_code=429, detail="Gemini API quota/rate limit exceeded. Please wait and retry or adjust quota.")
+            if isinstance(e, PermissionDenied):
+                raise HTTPException(status_code=403, detail="Gemini API access denied. Check API key or project permissions.")
+            if isinstance(e, InvalidArgument):
+                raise HTTPException(status_code=400, detail="Invalid request to Gemini API. Check model name or payload.")
+        except Exception:
+            pass
+        logger.exception("Chat error")
+        raise HTTPException(status_code=500, detail=f"Chat backend error: {str(e)}")
 
 @app.post("/simulate", response_model=SimulationResponse)
 async def simulate_circuit(request: SimulationRequest):

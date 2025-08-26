@@ -3,7 +3,11 @@ import { EditorToolbar } from './toolbar/EditorToolbar.tsx';
 import { TimelineGrid } from './timeline/TimelineGrid.tsx';
 import { CodePreview } from './CodePreview.tsx';
 import { useQuantumStore } from '@/store/quantumStore';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { GATE_METADATA, GateMeta } from './gates.ts';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { ExternalLink, X } from 'lucide-react';
 
 export const VisualEditor = () => {
   const { 
@@ -13,6 +17,8 @@ export const VisualEditor = () => {
     clearPendingControl, 
     pendingControl 
   } = useQuantumStore();
+  const [helperGate, setHelperGate] = useState<GateMeta | null>(null);
+  const [showHelperPanel, setShowHelperPanel] = useState<boolean>(true);
   
   // Auto-compile to QASM when circuit changes
   useEffect(() => {
@@ -47,7 +53,12 @@ export const VisualEditor = () => {
       
       <div className="flex gap-6 items-start transition-all duration-500 ease-in-out">
         <div className="w-64 shrink-0 transition-all duration-300">
-          <GatePalette />
+          <GatePalette onShowInfo={(type) => {
+            const meta = GATE_METADATA.find(m => m.type === type) || null;
+            setHelperGate(meta);
+            // Ensure the helper panel is visible when a gate is selected
+            setShowHelperPanel(true);
+          }} />
         </div>
         <div className="flex-1 grid grid-cols-1 xl:grid-cols-2 gap-6 transition-all duration-500 ease-in-out">
           <div className="space-y-4 transition-all duration-300">
@@ -58,6 +69,50 @@ export const VisualEditor = () => {
             <CodePreview />
           </div>
         </div>
+        {/* Gate Helper Panel */}
+        {showHelperPanel && (
+          <div className="hidden xl:block w-80 shrink-0">
+            <Card className="p-3 sticky top-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm font-semibold">Gate Helper</div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => setShowHelperPanel(false)}
+                  aria-label="Close gate helper"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              {helperGate ? (
+                <div className="space-y-2 text-sm">
+                  <div className="font-medium">{helperGate.name} ({helperGate.label})</div>
+                  <div className="text-muted-foreground">{helperGate.description}</div>
+                  <div className="bg-muted rounded px-2 py-1 font-mono text-xs">{helperGate.qasm}</div>
+                  {helperGate.details && (
+                    <div className="text-xs text-muted-foreground">{helperGate.details}</div>
+                  )}
+                  {helperGate.matrix && (
+                    <div>
+                      <div className="text-xs font-medium mb-1">Matrix</div>
+                      <div className="bg-muted rounded px-2 py-1 font-mono text-xs whitespace-pre-wrap">{helperGate.matrix}</div>
+                    </div>
+                  )}
+                  {helperGate.learnUrl && (
+                    <Button asChild variant="link" className="px-0 h-auto text-xs">
+                      <a href={helperGate.learnUrl} target="_blank" rel="noreferrer">
+                        Learn more <ExternalLink className="w-3 h-3 ml-1" />
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground">Hover the info icon on a gate to see details here.</div>
+              )}
+            </Card>
+          </div>
+        )}
       </div>
     </div>
   );

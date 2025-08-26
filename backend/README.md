@@ -122,6 +122,22 @@ Simulate a quantum circuit and return Bloch sphere visualization data.
 
 Health check endpoint returning system status.
 
+### Chat Endpoint (Optional)
+
+#### `POST /chat/completions`
+
+Lightweight assistant backed by Google Gemini 2.5 Flash.
+
+Enable by setting env vars before starting the server:
+
+```bash
+export GOOGLE_API_KEY=***your_key***
+# optional
+export GEMINI_MODEL=gemini-2.5-flash
+```
+
+If not configured, the endpoint returns HTTP 501.
+
 ### WebSocket Endpoints
 
 #### `WS /ws/simulate`

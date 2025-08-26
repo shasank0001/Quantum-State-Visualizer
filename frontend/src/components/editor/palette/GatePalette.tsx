@@ -1,18 +1,17 @@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useQuantumStore } from '@/store/quantumStore';
+import { Info } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { GATE_METADATA } from '../gates';
 
-const gates = [
-  { type: 'H', label: 'H', description: 'Hadamard' },
-  { type: 'X', label: 'X', description: 'Pauli-X' },
-  { type: 'Z', label: 'Z', description: 'Pauli-Z' },
-  { type: 'S', label: 'S', description: 'Phase' },
-  { type: 'T', label: 'T', description: 'T-gate' },
-  { type: 'CNOT', label: 'CNOT', description: 'Controlled-X' },
-  { type: 'CZ', label: 'CZ', description: 'Controlled-Z' },
-] as const;
+const gates = GATE_METADATA;
 
-export const GatePalette = () => {
+type Props = {
+  onShowInfo?: (type: typeof gates[number]['type']) => void;
+};
+
+export const GatePalette = ({ onShowInfo }: Props) => {
   const { activeGate, selectActiveGate, pendingControl, clearPendingControl } = useQuantumStore();
   
   const isTwoQubitGate = (gateType: string) => gateType === 'CNOT' || gateType === 'CZ';
@@ -44,9 +43,10 @@ export const GatePalette = () => {
         </div>
       )}
       
+      <TooltipProvider>
       <div className="grid grid-cols-2 gap-2">
         {gates.map((g) => (
-          <div key={g.type} className="relative">
+          <div key={g.type} className="relative group">
             <Button 
               variant={activeGate === g.type ? 'default' : 'outline'} 
               size="sm" 
@@ -63,21 +63,38 @@ export const GatePalette = () => {
                 } catch {}
               }}
             >
-              {g.label}
+              <span className="flex-1 text-left">{g.label}</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 ml-1"
+                    onClick={(e) => { e.stopPropagation(); onShowInfo?.(g.type); }}
+                    aria-label={`About ${g.name}`}
+                  >
+                    <Info className="w-3.5 h-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-[220px]">
+                  <div className="text-xs space-y-1">
+                    <div className="font-medium">{g.name} ({g.label})</div>
+                    <div className="text-muted-foreground">{g.description}</div>
+                    <div className="bg-muted rounded px-1.5 py-0.5 font-mono">{g.qasm}</div>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
               {isTwoQubitGate(g.type) && (
                 <Badge variant="secondary" className="ml-1 text-xs px-1 py-0">
                   2Q
                 </Badge>
               )}
             </Button>
-            
-            {/* Gate description tooltip */}
-            <div className="absolute z-10 invisible group-hover:visible bg-popover text-popover-foreground text-xs p-1 rounded shadow-md -top-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap">
-              {g.description}
-            </div>
           </div>
         ))}
       </div>
+      </TooltipProvider>
       
       <div className="text-xs text-muted-foreground space-y-1">
         <p>• Single-qubit: Click to place</p>
