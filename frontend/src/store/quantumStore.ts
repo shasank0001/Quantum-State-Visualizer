@@ -44,10 +44,10 @@ export interface QuantumState {
   // Visual editor state
   visualCircuit: {
     qubits: 1|2|3|4;
-    steps: Array<Record<number, { id: string; type: 'H'|'X'|'Z'|'S'|'T'|'CNOT'|'CZ'; targets: number[]; controls?: number[]; role?: 'control'|'target'; linkId?: string }>>;
+  steps: Array<Record<number, { id: string; type: 'H'|'X'|'Y'|'Z'|'S'|'T'|'RX'|'RY'|'RZ'|'CNOT'|'CZ'|'SWAP'; targets: number[]; controls?: number[]; role?: 'control'|'target'; linkId?: string }>>;
   };
   visualReadOnly: boolean;
-  activeGate: null | 'H'|'X'|'Z'|'S'|'T'|'CNOT'|'CZ';
+  activeGate: null | 'H'|'X'|'Y'|'Z'|'S'|'T'|'RX'|'RY'|'RZ'|'CNOT'|'CZ'|'SWAP';
   pendingControl: number | null;
   
   // Validation state
@@ -297,7 +297,7 @@ function parseComplexNumber(complexStr: string): number {
         }
         
         // For two-qubit gates, emit only once (on control role or if no role)
-        if ((node.type === 'CNOT' || node.type === 'CZ') && node.role === 'target') return;
+  if ((node.type === 'CNOT' || node.type === 'CZ' || node.type === 'SWAP') && node.role === 'target') return;
         
         try {
           switch (node.type) {
@@ -314,6 +314,10 @@ function parseComplexNumber(complexStr: string): number {
                 break;
               }
               lines.push(`x q[${i}];`); 
+              break;
+            case 'Y': 
+              if (i < 0 || i >= N) { errors.push(`Y gate qubit index ${i} out of bounds at column ${colIdx + 1}`); break; }
+              lines.push(`y q[${i}];`); 
               break;
             case 'Z': 
               if (i < 0 || i >= N) {
@@ -335,6 +339,18 @@ function parseComplexNumber(complexStr: string): number {
                 break;
               }
               lines.push(`t q[${i}];`); 
+              break;
+            case 'RX':
+              if (i < 0 || i >= N) { errors.push(`RX gate qubit index ${i} out of bounds at column ${colIdx + 1}`); break; }
+              lines.push(`rx(pi/2) q[${i}];`);
+              break;
+            case 'RY':
+              if (i < 0 || i >= N) { errors.push(`RY gate qubit index ${i} out of bounds at column ${colIdx + 1}`); break; }
+              lines.push(`ry(pi/2) q[${i}];`);
+              break;
+            case 'RZ':
+              if (i < 0 || i >= N) { errors.push(`RZ gate qubit index ${i} out of bounds at column ${colIdx + 1}`); break; }
+              lines.push(`rz(pi/2) q[${i}];`);
               break;
             case 'CNOT': 
               if (!node.controls || !node.targets || !Array.isArray(node.controls) || !Array.isArray(node.targets)) {
@@ -366,6 +382,17 @@ function parseComplexNumber(complexStr: string): number {
               lines.push(`cx q[${cnotControl}], q[${cnotTarget}];`); 
               break;
             case 'CZ': 
+            case 'SWAP':
+              if (!node.controls || !node.targets || !Array.isArray(node.controls) || !Array.isArray(node.targets)) { errors.push(`Invalid SWAP at column ${colIdx + 1}, row ${i + 1}: missing or malformed controls/targets`); break; }
+              if (node.controls.length === 0 || node.targets.length === 0) { errors.push(`Invalid SWAP at column ${colIdx + 1}, row ${i + 1}: empty controls or targets array`); break; }
+              const swapA = node.controls[0];
+              const swapB = node.targets[0];
+              if (typeof swapA !== 'number' || typeof swapB !== 'number') { errors.push(`Invalid SWAP at column ${colIdx + 1}: endpoints are not numbers`); break; }
+              if (swapA < 0 || swapA >= N) { errors.push(`SWAP endpoint Q${swapA} out of bounds at column ${colIdx + 1} (valid: 0-${N-1})`); break; }
+              if (swapB < 0 || swapB >= N) { errors.push(`SWAP endpoint Q${swapB} out of bounds at column ${colIdx + 1} (valid: 0-${N-1})`); break; }
+              if (swapA === swapB) { errors.push(`SWAP endpoints cannot be the same qubit (Q${swapA}) at column ${colIdx + 1}`); break; }
+              lines.push(`swap q[${swapA}], q[${swapB}];`);
+              break;
               if (!node.controls || !node.targets || !Array.isArray(node.controls) || !Array.isArray(node.targets)) {
                 errors.push(`Invalid CZ at column ${colIdx + 1}, row ${i + 1}: missing or malformed controls/targets`);
                 break;
@@ -474,7 +501,7 @@ function parseComplexNumber(complexStr: string): number {
     
     const id = `${g}-${col}-${Date.now()}`;
     
-    if (g === 'CNOT' || g === 'CZ') {
+  if (g === 'CNOT' || g === 'CZ' || g === 'SWAP') {
       // Two-step selection: first control, then target
       if (state.pendingControl === null) {
         // First click: set control qubit
@@ -501,7 +528,7 @@ function parseComplexNumber(complexStr: string): number {
           return { pendingControl: null } as any; // Clear pending state
         }
         
-        // All validations passed: place the two-qubit gate
+  // All validations passed: place the two-qubit gate
         const linkId = id;
         colMap[control] = { 
           id, 

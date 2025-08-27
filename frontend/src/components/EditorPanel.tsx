@@ -62,7 +62,7 @@ export const EditorPanel = () => {
     const hasHeader = lines.some(line => line.includes('OPENQASM'));
     const hasQreg = lines.some(line => line.includes('qreg'));
     const gateCount = lines.filter(line => 
-      /^(h|x|y|z|cx|ry|rx|rz)\s/.test(line.trim())
+      /^(h|x|y|z|s|t|sdg|tdg|sx|sxdg|id|rx|ry|rz|u\d?|p|cx|cy|cz|ch|swap|ccx|cswap|csx|dcx|crx|crz|cp|cu\d?|rxx|ryy|rzz|rzx|ecr|iswap|measure|reset|barrier)\b/i.test(line.trim())
     ).length;
     
     return { hasHeader, hasQreg, gateCount, isValid: hasHeader && hasQreg };

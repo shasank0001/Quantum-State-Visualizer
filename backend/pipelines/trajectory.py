@@ -259,24 +259,21 @@ class TrajectoryPipeline(SimulationPipeline):
     
     def _compute_reduced_density_matrix(self, state_vector: np.ndarray, n_qubits: int, 
                                       target_qubit: int) -> np.ndarray:
-        """
-        Compute reduced density matrix from statevector (same as unitary pipeline).
-        """
-        rho = np.zeros((2, 2), dtype=np.complex128)
-        
-        # Direct computation for efficiency
-        for i in range(2**n_qubits):
-            for j in range(2**n_qubits):
-                # Extract target qubit states
-                target_i = (i >> target_qubit) & 1
-                target_j = (j >> target_qubit) & 1
-                
-                # Check if other qubits match
-                mask = ~(1 << target_qubit) & ((1 << n_qubits) - 1)
-                if (i & mask) == (j & mask):
-                    rho[target_i, target_j] += state_vector[i].conj() * state_vector[j]
-        
-        return rho
+        """Vectorized single-qubit RDM from a statevector (little-endian qubit 0)."""
+        if n_qubits == 1:
+            v = state_vector.reshape(2, 1)
+            return (v @ v.conj().T).astype(np.complex128)
+        shape = (2,) * n_qubits
+        # Map little-endian qubit index to reshape axis
+        target_axis = n_qubits - 1 - target_qubit
+        axes = (target_axis,) + tuple(i for i in range(n_qubits) if i != target_axis)
+        V = state_vector.reshape(shape).transpose(axes).reshape(2, -1)
+        rho = V @ V.conj().T
+        tr = float(np.trace(rho).real)
+        if abs(tr) > 1e-15:
+            rho = rho / tr
+        rho = 0.5 * (rho + rho.conj().T)
+        return rho.astype(np.complex128)
 
     def _measure_and_collapse(self, state_vector: np.ndarray, n_qubits: int, target_qubit: int):
         """
@@ -330,7 +327,7 @@ class TrajectoryPipeline(SimulationPipeline):
         k = len(qargs)
         assert gate_matrix.shape == (2**k, 2**k)
         # Sort qargs for consistent bit order (little-endian: qubit 0 is LSB)
-        qargs_sorted = list(qargs)
+        qargs_sorted = sorted(qargs)
         # Map basis index regrouping
         dim = 2 ** n_qubits
         new_state = np.zeros_like(state_vector)
@@ -364,16 +361,15 @@ class TrajectoryPipeline(SimulationPipeline):
         return new_state
     
     def _format_density_matrix(self, rho: np.ndarray) -> list:
-        """Format density matrix for JSON serialization."""
+        """Format density matrix as JSON-safe [[re,im], ...]."""
         formatted = []
         for i in range(2):
             row = []
             for j in range(2):
                 real = clip_tiny_values(rho[i, j].real)
                 imag = clip_tiny_values(rho[i, j].imag)
-                row.append(complex(real, imag))
+                row.append([float(real), float(imag)])
             formatted.append(row)
-        
         return formatted
     
     def _estimate_memory(self, n_qubits: int) -> float:

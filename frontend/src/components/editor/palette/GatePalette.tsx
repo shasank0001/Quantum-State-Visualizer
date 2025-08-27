@@ -14,7 +14,10 @@ type Props = {
 export const GatePalette = ({ onShowInfo }: Props) => {
   const { activeGate, selectActiveGate, pendingControl, clearPendingControl } = useQuantumStore();
   
-  const isTwoQubitGate = (gateType: string) => gateType === 'CNOT' || gateType === 'CZ';
+  const isTwoQubitGate = (gateType: string) => {
+    const meta = gates.find(g => g.type === (gateType as any));
+    return Boolean(meta?.twoQ);
+  };
   
   return (
     <div className="space-y-3">

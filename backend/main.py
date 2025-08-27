@@ -7,6 +7,7 @@ Implements the architecture specified in dev_plane.md with modular simulation pi
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Union, Any
 import asyncio
@@ -42,11 +43,27 @@ app = FastAPI(
 # Add CORS middleware for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://localhost:8080"],  # Vite and React dev servers
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
+
+# Ensure CORS headers are present even for requests without Origin header
+@app.middleware("http")
+async def add_cors_headers(request, call_next):
+    # Short-circuit bare OPTIONS requests
+    if request.method == "OPTIONS":
+        return Response(status_code=200, headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+        })
+    response = await call_next(request)
+    response.headers.setdefault("Access-Control-Allow-Origin", "*")
+    response.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    response.headers.setdefault("Access-Control-Allow-Headers", "Content-Type")
+    return response
 
 # Initialize simulation pipelines
 PIPELINES: Dict[str, SimulationPipeline] = {
@@ -93,7 +110,6 @@ load_dotenv()
 # Optional Gemini client (loaded lazily)
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
-print(GOOGLE_API_KEY)
 try:
     import google.generativeai as genai  # type: ignore
     _HAS_GEMINI = True

@@ -61,8 +61,9 @@ class SimulationPipeline(ABC):
                 return False
             if circuit.num_qubits > 24:  # Global limit
                 return False
-            if len(circuit.data) == 0:
-                return False
+            # Allow empty circuits (identity); pipelines should handle |0...0>
+            # if len(circuit.data) == 0:
+            #     return False
             return True
         except Exception as e:
             self.logger.error(f"Circuit validation failed: {e}")
@@ -116,11 +117,14 @@ class SimulationPipeline(ABC):
             # Validate Bloch vector magnitude
             if 'bloch' in data:
                 x, y, z = data['bloch']
-                magnitude = np.sqrt(x*x + y*y + z*z)
-                if magnitude > 1.1:  # Allow small numerical errors
-                    self.logger.warning(f"Bloch vector magnitude {magnitude} > 1 for qubit {qubit_id}")
-                    # Normalize if too large
-                    if magnitude > 1.0:
+                magnitude = float(np.sqrt(x*x + y*y + z*z))
+                # If numerically just above 1, clamp; if much larger, normalize and warn
+                if magnitude > 1.0:
+                    if magnitude <= 1.000001:
+                        scale = 1.0 / magnitude
+                        data['bloch'] = [x*scale, y*scale, z*scale]
+                    else:
+                        self.logger.warning(f"Bloch vector magnitude {magnitude} > 1 for qubit {qubit_id}")
                         data['bloch'] = [x/magnitude, y/magnitude, z/magnitude]
         
         return processed_results

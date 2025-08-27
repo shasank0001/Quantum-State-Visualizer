@@ -7,6 +7,7 @@ import numpy as np
 from qiskit import QuantumCircuit
 from qiskit.circuit.library import *
 from qiskit import qasm2
+import re
 from typing import Dict, List, Tuple, Any, Optional
 import time
 import logging
@@ -17,15 +18,20 @@ logger = logging.getLogger(__name__)
 SUPPORTED_GATES = {
     # Single-qubit unitary gates
     'h', 'x', 'y', 'z', 's', 't', 'sdg', 'tdg',
-    'rx', 'ry', 'rz', 'u1', 'u2', 'u3',
-    # Two-qubit unitary gates
-    'cx', 'cy', 'cz', 'ch', 'swap', 'ccx',
-    # Non-unitary operations (measurements)
+    'sx', 'sxdg', 'id',
+    'rx', 'ry', 'rz', 'u', 'u1', 'u2', 'u3', 'p',
+    # Two-qubit (and controlled) unitary gates
+    'cx', 'cy', 'cz', 'ch', 'swap', 'ccx', 'cswap', 'csx', 'dcx',
+    'crx', 'crz', 'cp', 'cu1', 'cu2', 'cu3',
+    'rxx', 'ryy', 'rzz', 'rzx', 'ecr', 'iswap',
+    # Misc / compile-time ops treated as unitary no-ops
+    'barrier',
+    # Non-unitary operations (measurements/resets)
     'measure', 'reset'
 }
 
-# Non-unitary operations that affect routing
-NON_UNITARY_OPS = {'measure', 'reset', 'barrier'}
+# Non-unitary operations that affect routing (barrier is unitary/no-op)
+NON_UNITARY_OPS = {'measure', 'reset'}
 
 def parse_and_validate_circuit(qasm_code: str) -> Tuple[QuantumCircuit, Dict[str, Any]]:
     """
@@ -63,6 +69,43 @@ def parse_and_validate_circuit(qasm_code: str) -> Tuple[QuantumCircuit, Dict[str
             validation_info["errors"].append("Missing OPENQASM version declaration")
             return None, validation_info
         
+        # QASM shims: expand a few non-qelib instructions into qelib1-compatible sequences
+        def _expand_qasm_aliases(qasm: str) -> str:
+            # 1) CRY(theta) decomposition (control=c, target=t)
+            cry_pat = re.compile(r"^\s*cry\(([^)]+)\)\s+q\[(\d+)\],\s*q\[(\d+)\];\s*$", re.IGNORECASE | re.MULTILINE)
+            def cry_repl(m):
+                angle, c, t = m.group(1), m.group(2), m.group(3)
+                return (f"ry({angle}/2) q[{t}];\n"
+                        f"cx q[{c}], q[{t}];\n"
+                        f"ry(-{angle}/2) q[{t}];\n"
+                        f"cx q[{c}], q[{t}];")
+            qasm = re.sub(cry_pat, cry_repl, qasm)
+
+            # 2) CP(theta) alias to CU1(theta)
+            cp_pat = re.compile(r"^\s*cp\(([^)]+)\)\s+q\[(\d+)\],\s*q\[(\d+)\];\s*$", re.IGNORECASE | re.MULTILINE)
+            def cp_repl(m):
+                angle, c, t = m.group(1), m.group(2), m.group(3)
+                return f"cu1({angle}) q[{c}], q[{t}];"
+            qasm = re.sub(cp_pat, cp_repl, qasm)
+
+            # 3) DCX(a,b) ≡ CX(a,b); CX(b,a)
+            dcx_pat = re.compile(r"^\s*dcx\s+q\[(\d+)\],\s*q\[(\d+)\];\s*$", re.IGNORECASE | re.MULTILINE)
+            def dcx_repl(m):
+                a, b = m.group(1), m.group(2)
+                return f"cx q[{a}], q[{b}];\ncx q[{b}], q[{a}];"
+            qasm = re.sub(dcx_pat, dcx_repl, qasm)
+
+            # 4) RZZ(theta) decomposition via CX-RZ-CX (control=a, target=b)
+            rzz_pat = re.compile(r"^\s*rzz\(([^)]+)\)\s+q\[(\d+)\],\s*q\[(\d+)\];\s*$", re.IGNORECASE | re.MULTILINE)
+            def rzz_repl(m):
+                angle, a, b = m.group(1), m.group(2), m.group(3)
+                return f"cx q[{a}], q[{b}];\nrz({angle}) q[{b}];\ncx q[{a}], q[{b}];"
+            qasm = re.sub(rzz_pat, rzz_repl, qasm)
+
+            return qasm
+
+        qasm_code = _expand_qasm_aliases(qasm_code)
+
         # Parse circuit using Qiskit
         try:
             circuit = qasm2.loads(qasm_code)
@@ -133,10 +176,12 @@ def route_circuit(circuit: QuantumCircuit, shots: int = 1024, force_pipeline: Op
     """
     Route quantum circuit to appropriate simulation pipeline.
     
-    Implementation of routing logic from dev_plane.md:
+    Routing logic:
     - Unitary circuits with ≤20 qubits → unitary pipeline
-    - Non-unitary circuits with ≤16 qubits and >1000 shots → trajectory pipeline  
-    - Otherwise → exact_density pipeline
+    - Non-unitary circuits:
+        * ≤8 qubits → exact_density pipeline (exact mixed-state evolution)
+        * 9–16 qubits → trajectory pipeline (Monte Carlo sampling)
+        * >16 qubits → trajectory by default (may still exceed limits)
     
     Args:
         circuit: Parsed quantum circuit
@@ -168,16 +213,24 @@ def route_circuit(circuit: QuantumCircuit, shots: int = 1024, force_pipeline: Op
     qubit_count = circuit.num_qubits
     op_count = len(circuit.data)
     
-    # Routing logic from dev_plane.md
+    # Routing logic aligned with new exact_density limit (8)
     if is_unitary and qubit_count <= 20:
         pipeline = 'unitary'
         reason = f"Unitary circuit with {qubit_count} qubits (≤20)"
-    elif not is_unitary and qubit_count <= 16 and shots >= 1000:
-        pipeline = 'trajectory'
-        reason = f"Non-unitary circuit with {qubit_count} qubits (≤16) and {shots} shots (≥1000)"
+    elif not is_unitary:
+        if qubit_count <= 8:
+            pipeline = 'exact_density'
+            reason = f"Non-unitary circuit with {qubit_count} qubits (≤8) → exact density"
+        elif qubit_count <= 16:
+            pipeline = 'trajectory'
+            reason = f"Non-unitary circuit with {qubit_count} qubits (9–16) → trajectory"
+        else:
+            pipeline = 'trajectory'
+            reason = f"Non-unitary circuit with {qubit_count} qubits (>16) → trajectory (may exceed limits)"
     else:
+        # Unitary circuits with >20 qubits fall back to exact_density which will likely fail by its own cap
         pipeline = 'exact_density'
-        reason = f"Fallback: qubits={qubit_count}, unitary={is_unitary}, shots={shots}"
+        reason = f"Fallback: unitary={is_unitary}, qubits={qubit_count}"
     
     logger.info(f"Routed to {pipeline} pipeline: {reason}")
     return pipeline
@@ -261,7 +314,7 @@ def partial_trace_qubit(state_vector: np.ndarray, total_qubits: int, target_qubi
             
             # Check if all other qubits are the same between i and j
             # (this is the condition for the partial trace)
-            mask = ~(1 << target_qubit)
+            mask = ~(1 << target_qubit) & ((1 << total_qubits) - 1)
             if (i & mask) == (j & mask):
                 # Add the contribution to the reduced density matrix
                 rho[target_i, target_j] += state_vector[i].conj() * state_vector[j]

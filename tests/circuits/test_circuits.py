@@ -81,7 +81,7 @@ h q[2];
 measure q[2] -> c[2];
 reset q[2];
 h q[2];""",
-        "expected_pipeline": "trajectory",
+    "expected_pipeline": "exact_density",
         "expected_qubits": 3,
         "expected_entanglement": True,
         "expected_pure_global": False,  # Measurements create mixed states
@@ -139,7 +139,7 @@ h q[3];
 measure q[3] -> c[3];
 ry(0.5) q[2];
 cz q[0], q[3];""",
-        "expected_pipeline": "trajectory",
+    "expected_pipeline": "exact_density",
         "expected_qubits": 4,
         "expected_entanglement": True,
         "expected_pure_global": False,

@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Card } from '@/components/ui/card';
-import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { X, RotateCcw, Info } from 'lucide-react';
@@ -19,11 +18,12 @@ interface ExpandedQubitViewProps {
   onClose: () => void;
 }
 
-function VectorArrow({ start, end, color, lineWidth }: { 
+function VectorArrow({ start, end, color, lineWidth, opacity = 1.0 }: { 
   start: [number, number, number]; 
   end: [number, number, number]; 
   color: string; 
   lineWidth: number; 
+  opacity?: number;
 }) {
   const arrowRef = useRef<THREE.Group>(null);
   
@@ -71,7 +71,7 @@ function VectorArrow({ start, end, color, lineWidth }: {
         color={color}
         lineWidth={lineWidth}
         transparent
-        opacity={1.0}
+        opacity={opacity}
         renderOrder={999}
       />
       
@@ -82,7 +82,7 @@ function VectorArrow({ start, end, color, lineWidth }: {
           <meshBasicMaterial 
             color={color}
             transparent
-            opacity={1.0}
+            opacity={opacity}
             depthTest={false}
             depthWrite={false}
           />
@@ -96,17 +96,68 @@ interface InteractiveBlochSphereProps {
   qubit: QubitState;
   showPhase: boolean;
   showState: boolean;
+  ghost?: { x: number; y: number; z: number } | null;
 }
 
 export const ExpandedQubitView = ({ qubit, isOpen, onClose }: ExpandedQubitViewProps) => {
-  const [animationSpeed, setAnimationSpeed] = useState(1);
   const [showPhaseAngle, setShowPhaseAngle] = useState(true);
   const [showState, setShowState] = useState(true);
-  const [precision, setPrecision] = useState(4);
+  const precision = 4;
+
+  // Local interactive Bloch vector for this expanded view (does not mutate global store)
+  const [viewBloch, setViewBloch] = useState(qubit.bloch);
+  const initialBlochRef = useRef(qubit.bloch);
+
+  useEffect(() => {
+    initialBlochRef.current = qubit.bloch;
+    setViewBloch(qubit.bloch);
+  }, [qubit]);
+
+  // Rotation helpers around axes by angle (radians)
+  const rotateX = (rad: number) => {
+    setViewBloch((b) => {
+      const c = Math.cos(rad), s = Math.sin(rad);
+      const y = b.y * c - b.z * s;
+      const z = b.y * s + b.z * c;
+      return { ...b, y, z };
+    });
+  };
+  const rotateY = (rad: number) => {
+    setViewBloch((b) => {
+      const c = Math.cos(rad), s = Math.sin(rad);
+      const x = b.x * c + b.z * s;
+      const z = -b.x * s + b.z * c;
+      return { ...b, x, z };
+    });
+  };
+  const rotateZ = (rad: number) => {
+    setViewBloch((b) => {
+      const c = Math.cos(rad), s = Math.sin(rad);
+      const x = b.x * c - b.y * s;
+      const y = b.x * s + b.y * c;
+      return { ...b, x, y };
+    });
+  };
+  const resetView = () => setViewBloch(initialBlochRef.current);
+
+  // Bloch angles (θ, φ) for display
+  const r = Math.max(1e-9, Math.sqrt(viewBloch.x**2 + viewBloch.y**2 + viewBloch.z**2));
+  const theta = Math.acos(Math.max(-1, Math.min(1, viewBloch.z / r)));
+  const phi = Math.atan2(viewBloch.y, viewBloch.x);
+
+  // Measurement basis and snapshot compare
+  const [basis, setBasis] = useState<'Z'|'X'|'Y'>('Z');
+  const [ghostBloch, setGhostBloch] = useState<{x:number;y:number;z:number}|null>(null);
+  const prob0 = (() => {
+    if (basis === 'Z') return (1 + viewBloch.z) / 2;
+    if (basis === 'X') return (1 + viewBloch.x) / 2;
+    return (1 + viewBloch.y) / 2; // Y
+  })();
+  const prob1 = 1 - prob0;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl w-full h-[90vh] p-0 bg-background border border-border">
+  <DialogContent className="max-w-4xl w-full h-[85vh] sm:h-[90vh] max-h-[90vh] p-0 bg-background border border-border grid-rows-[auto,1fr] overflow-hidden">
         <DialogHeader className="p-6 border-b border-border bg-gradient-quantum-subtle">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -126,7 +177,7 @@ export const ExpandedQubitView = ({ qubit, isOpen, onClose }: ExpandedQubitViewP
           </div>
         </DialogHeader>
 
-        <div className="flex flex-1 h-full">
+  <div className="flex h-full min-h-0">
           {/* Main 3D View */}
           <div className="flex-1 relative">
             <div className="absolute inset-0">
@@ -136,9 +187,10 @@ export const ExpandedQubitView = ({ qubit, isOpen, onClose }: ExpandedQubitViewP
                 performance={{ min: 0.5 }}
               >
                 <InteractiveBlochSphere 
-                  qubit={qubit} 
+                  qubit={{ ...qubit, bloch: { ...viewBloch, purity: qubit.bloch.purity } }} 
                   showPhase={showPhaseAngle}
                   showState={showState}
+                  ghost={ghostBloch}
                 />
                 <OrbitControls 
                   enableZoom={true} 
@@ -168,19 +220,19 @@ export const ExpandedQubitView = ({ qubit, isOpen, onClose }: ExpandedQubitViewP
                   <div className="text-center">
                     <div className="text-xs text-muted-foreground mb-1">X</div>
                     <div className="text-lg font-bold text-quantum-primary">
-                      {qubit.bloch.x.toFixed(precision)}
+                      {viewBloch.x.toFixed(precision)}
                     </div>
                   </div>
                   <div className="text-center">
                     <div className="text-xs text-muted-foreground mb-1">Y</div>
                     <div className="text-lg font-bold text-quantum-secondary">
-                      {qubit.bloch.y.toFixed(precision)}
+                      {viewBloch.y.toFixed(precision)}
                     </div>
                   </div>
                   <div className="text-center">
                     <div className="text-xs text-muted-foreground mb-1">Z</div>
                     <div className="text-lg font-bold text-quantum-accent">
-                      {qubit.bloch.z.toFixed(precision)}
+                      {viewBloch.z.toFixed(precision)}
                     </div>
                   </div>
                 </div>
@@ -190,47 +242,64 @@ export const ExpandedQubitView = ({ qubit, isOpen, onClose }: ExpandedQubitViewP
 
           {/* Side Panel */}
           <div className="w-80 bg-gradient-quantum-subtle border-l border-border p-6 overflow-y-auto">
-            {/* Speed Control */}
+            {/* Bloch Angles + Quick Gates */}
             <Card className="p-4 mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <Label className="text-sm font-semibold">Speed</Label>
-                <Badge variant="outline">{animationSpeed.toFixed(1)}x</Badge>
+              <div className="mb-3">
+                <Label className="text-sm font-semibold">Bloch Angles</Label>
               </div>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">Animation:</span>
-                  <span className="text-xs font-medium">{animationSpeed.toFixed(1)}x</span>
+              <div className="grid grid-cols-2 gap-3 mono-scientific text-sm mb-4">
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">θ (rad)</div>
+                  <div className="px-2 py-1 rounded border bg-background">{theta.toFixed(3)}</div>
                 </div>
-                <Slider
-                  value={[animationSpeed]}
-                  onValueChange={([value]) => setAnimationSpeed(value)}
-                  min={0}
-                  max={3}
-                  step={0.1}
-                  className="w-full"
-                />
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">φ (rad)</div>
+                  <div className="px-2 py-1 rounded border bg-background">{phi.toFixed(3)}</div>
+                </div>
+              </div>
+              <div className="mb-2">
+                <Label className="text-xs text-muted-foreground">Quick gates (π/2)</Label>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <Button size="sm" variant="secondary" onClick={() => rotateX(Math.PI/2)}>RX</Button>
+                <Button size="sm" variant="secondary" onClick={() => rotateY(Math.PI/2)}>RY</Button>
+                <Button size="sm" variant="secondary" onClick={() => rotateZ(Math.PI/2)}>RZ</Button>
+              </div>
+              <div className="mt-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <Button size="sm" variant="ghost" onClick={resetView}>Reset</Button>
+                  {ghostBloch ? (
+                    <Button size="sm" variant="outline" onClick={() => setGhostBloch(null)}>Clear Snapshot</Button>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => setGhostBloch({x:viewBloch.x,y:viewBloch.y,z:viewBloch.z})}>Snapshot</Button>
+                  )}
+                </div>
               </div>
             </Card>
 
-            {/* Precision Control */}
+            {/* Measurement (Basis Probabilities) */}
             <Card className="p-4 mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <Label className="text-sm font-semibold">Precision</Label>
-                <Badge variant="outline">High</Badge>
+              <div className="mb-3 flex items-center justify-between">
+                <Label className="text-sm font-semibold">Measurement</Label>
+                <div className="flex gap-1">
+                  <Button size="sm" variant={basis==='Z'?'default':'secondary'} onClick={() => setBasis('Z')}>Z</Button>
+                  <Button size="sm" variant={basis==='X'?'default':'secondary'} onClick={() => setBasis('X')}>X</Button>
+                  <Button size="sm" variant={basis==='Y'?'default':'secondary'} onClick={() => setBasis('Y')}>Y</Button>
+                </div>
               </div>
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">Accuracy:</span>
-                  <span className="text-xs font-medium">±1e-{precision}</span>
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1"><span className="text-muted-foreground">P(0)</span><span className="mono-scientific font-medium">{prob0.toFixed(3)}</span></div>
+                  <div className="h-2 bg-muted rounded">
+                    <div className="h-2 bg-primary rounded" style={{ width: `${Math.max(0, Math.min(1, prob0))*100}%` }} />
+                  </div>
                 </div>
-                <Slider
-                  value={[precision]}
-                  onValueChange={([value]) => setPrecision(value)}
-                  min={2}
-                  max={8}
-                  step={1}
-                  className="w-full"
-                />
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1"><span className="text-muted-foreground">P(1)</span><span className="mono-scientific font-medium">{prob1.toFixed(3)}</span></div>
+                  <div className="h-2 bg-muted rounded">
+                    <div className="h-2 bg-accent rounded" style={{ width: `${Math.max(0, Math.min(1, prob1))*100}%` }} />
+                  </div>
+                </div>
               </div>
             </Card>
 
@@ -278,10 +347,6 @@ export const ExpandedQubitView = ({ qubit, isOpen, onClose }: ExpandedQubitViewP
                   <span className="font-medium">8 states</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Accuracy:</span>
-                  <span className="font-medium">±1e-{precision}</span>
-                </div>
-                <div className="flex justify-between">
                   <span className="text-muted-foreground">Qubits:</span>
                   <span className="font-medium">3</span>
                 </div>
@@ -315,7 +380,7 @@ export const ExpandedQubitView = ({ qubit, isOpen, onClose }: ExpandedQubitViewP
   );
 };
 
-function InteractiveBlochSphere({ qubit, showPhase, showState }: InteractiveBlochSphereProps) {
+function InteractiveBlochSphere({ qubit, showPhase, showState, ghost }: InteractiveBlochSphereProps) {
   const meshRef = useRef<THREE.Group>(null);
   const vectorRef = useRef<THREE.Group>(null);
   
@@ -484,6 +549,7 @@ function InteractiveBlochSphere({ qubit, showPhase, showState }: InteractiveBloc
           end={[qubit.bloch.x, qubit.bloch.z, qubit.bloch.y]}
           color="#00ffff"
           lineWidth={10}
+          opacity={0.95}
         />
         {/* Add a small sphere at the tip for visibility */}
         <mesh position={[qubit.bloch.x, qubit.bloch.z, qubit.bloch.y]} renderOrder={1002}>
@@ -495,6 +561,27 @@ function InteractiveBlochSphere({ qubit, showPhase, showState }: InteractiveBloc
           />
         </mesh>
       </group>
+
+      {/* Snapshot ghost vector for comparison */}
+      {ghost && (
+        <group>
+          <VectorArrow
+            start={[0, 0, 0]}
+            end={[ghost.x, ghost.z, ghost.y]}
+            color="#ff00ff"
+            lineWidth={6}
+            opacity={0.6}
+          />
+          <mesh position={[ghost.x, ghost.z, ghost.y]} renderOrder={1002}>
+            <sphereGeometry args={[0.045, 16, 8]} />
+            <meshBasicMaterial 
+              color="#ff00ff"
+              transparent
+              opacity={0.6}
+            />
+          </mesh>
+        </group>
+      )}
       
       {/* State labels - positioned on Z-axis (Y in Three.js coordinates) */}
       {showState && (

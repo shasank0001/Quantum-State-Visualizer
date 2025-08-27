@@ -72,9 +72,9 @@ class QubitState(BaseModel):
         ge=0.0,
         le=1.0
     )
-    density_matrix: List[List[Union[complex, float]]] = Field(
+    density_matrix: List[List[List[float]]] = Field(
         ..., 
-        description="2x2 reduced density matrix"
+        description="2x2 reduced density matrix as [[re,im], ...]"
     )
     label: str = Field(..., description="Human-readable qubit label")
 
@@ -94,9 +94,10 @@ class QubitState(BaseModel):
             raise ValueError("Density matrix must be 2x2")
         
         # Check if trace is approximately 1
-        trace = v[0][0] + v[1][1]
-        if abs(trace.real - 1.0) > 1e-6:
-            raise ValueError(f"Density matrix trace {trace.real} should be 1.0")
+        # v entries are [re, im]
+        trace_re = v[0][0][0] + v[1][1][0]
+        if abs(trace_re - 1.0) > 1e-6:
+            raise ValueError(f"Density matrix trace {trace_re} should be 1.0")
         
         return v
 

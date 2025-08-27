@@ -49,14 +49,12 @@ class UnitaryPipeline(SimulationPipeline):
         if circuit.num_qubits > self.max_qubits:
             self.logger.warning(f"Circuit has {circuit.num_qubits} qubits > {self.max_qubits} limit")
             return False
-        
         # Check for non-unitary operations
-        non_unitary_ops = {'measure', 'reset', 'noise', 'kraus', 'barrier'}
+        non_unitary_ops = {'measure', 'reset', 'noise', 'kraus'}
         for instr in circuit.data:
             if instr.operation.name.lower() in non_unitary_ops:
                 self.logger.warning(f"Non-unitary operation found: {instr.operation.name}")
                 return False
-        
         return True
     
     def run(self, circuit: QuantumCircuit, shots: int = 1024) -> Dict[int, Dict[str, Any]]:
@@ -94,9 +92,8 @@ class UnitaryPipeline(SimulationPipeline):
             
             for qubit_id in range(n_qubits):
                 try:
-                    # Compute reduced density matrix using utility function
-                    from utils import partial_trace_qubit
-                    rho = partial_trace_qubit(state_array, n_qubits, qubit_id)
+                    # Fast RDM via reshape + matmul (O(2^n))
+                    rho = self._rdm_from_statevector(state_array, n_qubits, qubit_id)
                     
                     # Compute Bloch coordinates
                     bloch_coords = compute_bloch_vector(rho)
@@ -110,7 +107,6 @@ class UnitaryPipeline(SimulationPipeline):
                         'purity': float(purity),
                         'rho': self._format_density_matrix(rho)
                     }
-                    
                 except Exception as e:
                     self.logger.error(f"Failed to compute state for qubit {qubit_id}: {str(e)}")
                     # Provide fallback state (|0⟩)
@@ -130,84 +126,32 @@ class UnitaryPipeline(SimulationPipeline):
             self.logger.error(f"Unitary simulation failed after {execution_time:.3f}s: {str(e)}")
             raise SimulationError(f"Unitary simulation failed: {str(e)}", pipeline=self.name)
     
-    def _compute_reduced_density_matrix(self, state_vector: np.ndarray, n_qubits: int, 
-                                      target_qubit: int) -> np.ndarray:
+    def _rdm_from_statevector(self, state_vector: np.ndarray, n_qubits: int, target_qubit: int) -> np.ndarray:
         """
-        Compute reduced density matrix for target qubit using partial trace.
-        
-        This is a vectorized implementation for efficiency with larger systems.
+        Fast single-qubit RDM from statevector using reshape + matmul.
+        Treat qubit 0 as LSB (little-endian) for axis ordering.
         """
-        # Convert statevector to full density matrix
-        rho_full = np.outer(state_vector.conj(), state_vector)
-        
-        # Reshape to tensor form for partial trace
-        dim = 2 ** n_qubits
-        rho_tensor = rho_full.reshape([2] * (2 * n_qubits))
-        
-        # Perform partial trace over all qubits except target
-        # This traces out qubits in order, keeping target_qubit
-        axes_to_trace = []
-        for i in range(n_qubits):
-            if i != target_qubit:
-                # Each qubit appears twice in tensor (bra and ket)
-                axes_to_trace.extend([i, i + n_qubits])
-        
-        # Sort axes in descending order for sequential tracing
-        axes_to_trace.sort(reverse=True)
-        
-        # Trace over unwanted qubits
-        rho_reduced = rho_tensor
-        traced_axes = 0
-        for axis in axes_to_trace:
-            adjusted_axis = axis - traced_axes
-            # Find the corresponding axis pair
-            if adjusted_axis >= len(rho_reduced.shape) // 2:
-                bra_axis = adjusted_axis
-                ket_axis = adjusted_axis - len(rho_reduced.shape) // 2
-            else:
-                bra_axis = adjusted_axis + len(rho_reduced.shape) // 2
-                ket_axis = adjusted_axis
-            
-            # Adjust for previous traces
-            if bra_axis > ket_axis:
-                bra_axis -= traced_axes // 2
-                ket_axis -= traced_axes // 2
-            else:
-                ket_axis -= traced_axes // 2
-                bra_axis -= traced_axes // 2
-            
-            rho_reduced = np.trace(rho_reduced, axis1=min(bra_axis, ket_axis), 
-                                 axis2=max(bra_axis, ket_axis))
-            traced_axes += 2
-        
-        # Ensure final result is 2x2
-        if rho_reduced.shape != (2, 2):
-            # Alternative method: direct computation
-            return self._compute_rdm_direct(state_vector, n_qubits, target_qubit)
-        
-        return rho_reduced.astype(np.complex128)
+        if n_qubits == 1:
+            # ρ = |ψ><ψ|
+            v = state_vector.reshape(2, 1)
+            return (v @ v.conj().T).astype(np.complex128)
+        shape = (2,) * n_qubits
+        # In row-major reshape, the last axis corresponds to LSB (qubit 0).
+        # Map target_qubit to its axis index accordingly.
+        target_axis = n_qubits - 1 - target_qubit
+        # Bring target axis to front: (target_axis, others...)
+        axes = (target_axis,) + tuple(i for i in range(n_qubits) if i != target_axis)
+        V = state_vector.reshape(shape).transpose(axes).reshape(2, -1)
+        rho = V @ V.conj().T
+        # Normalize to trace 1 (defensive against numeric drift)
+        tr = float(np.trace(rho).real)
+        if abs(tr) > 1e-15:
+            rho = rho / tr
+        # Hermitize
+        rho = 0.5 * (rho + rho.conj().T)
+        return rho.astype(np.complex128)
     
-    def _compute_rdm_direct(self, state_vector: np.ndarray, n_qubits: int, 
-                           target_qubit: int) -> np.ndarray:
-        """
-        Direct computation of reduced density matrix using basis projection.
-        Fallback method when tensor tracing fails.
-        """
-        rho = np.zeros((2, 2), dtype=np.complex128)
-        
-        # Iterate over all computational basis states
-        for i in range(2**n_qubits):
-            for j in range(2**n_qubits):
-                # Extract target qubit states
-                target_i = (i >> target_qubit) & 1
-                target_j = (j >> target_qubit) & 1
-                
-                # Check if other qubits match
-                mask = ~(1 << target_qubit) & ((1 << n_qubits) - 1)
-                if (i & mask) == (j & mask):
-                    rho[target_i, target_j] += state_vector[i].conj() * state_vector[j]
-        
-        return rho
+    # remove heavy full density matrix path; the fast path covers all cases for unitary
     
     def _format_density_matrix(self, rho: np.ndarray) -> list:
         """
@@ -218,12 +162,10 @@ class UnitaryPipeline(SimulationPipeline):
         for i in range(2):
             row = []
             for j in range(2):
-                # Clip tiny values
                 real = clip_tiny_values(rho[i, j].real)
                 imag = clip_tiny_values(rho[i, j].imag)
-                row.append(complex(real, imag))
+                row.append([float(real), float(imag)])
             formatted.append(row)
-        
         return formatted
     
     def _estimate_memory(self, n_qubits: int) -> float:

@@ -1,5 +1,5 @@
 export type GateMeta = {
-  type: 'H' | 'X' | 'Z' | 'S' | 'T' | 'CNOT' | 'CZ';
+  type: 'H' | 'X' | 'Y' | 'Z' | 'S' | 'T' | 'RX' | 'RY' | 'RZ' | 'CNOT' | 'CZ' | 'SWAP';
   label: string;
   name: string;
   description: string;
@@ -60,6 +60,43 @@ export const GATE_METADATA: GateMeta[] = [
   matrix: '[[1, 0],[0, e^{iπ/4}]]',
   },
   {
+    type: 'Y',
+    label: 'Y',
+    name: 'Pauli-Y',
+    description: 'Bit+phase flip.',
+    qasm: 'y q[i];',
+    learnUrl: 'https://en.wikipedia.org/wiki/Pauli_matrices',
+    details: 'Bloch: 180° rotation about the Y axis (π rad).',
+    matrix: '[[0, -i],[i, 0]]',
+  },
+  {
+    type: 'RX',
+    label: 'RX',
+    name: 'Rotation X (π/2)',
+    description: 'Rotate around X by π/2 (90°).',
+    qasm: 'rx(pi/2) q[i];',
+    learnUrl: 'https://qiskit.org/documentation/stubs/qiskit.circuit.library.RXGate.html',
+    details: 'Common quick rotation; adjust in code editor for custom angles.',
+  },
+  {
+    type: 'RY',
+    label: 'RY',
+    name: 'Rotation Y (π/2)',
+    description: 'Rotate around Y by π/2 (90°).',
+    qasm: 'ry(pi/2) q[i];',
+    learnUrl: 'https://qiskit.org/documentation/stubs/qiskit.circuit.library.RYGate.html',
+    details: 'Common quick rotation; adjust in code editor for custom angles.',
+  },
+  {
+    type: 'RZ',
+    label: 'RZ',
+    name: 'Rotation Z (π/2)',
+    description: 'Rotate around Z by π/2 (90°).',
+    qasm: 'rz(pi/2) q[i];',
+    learnUrl: 'https://qiskit.org/documentation/stubs/qiskit.circuit.library.RZGate.html',
+    details: 'Common quick rotation; adjust in code editor for custom angles.',
+  },
+  {
     type: 'CNOT',
     label: 'CNOT',
     name: 'Controlled-X (CNOT)',
@@ -78,5 +115,15 @@ export const GATE_METADATA: GateMeta[] = [
     twoQ: true,
   details: 'Diagonal(1,1,1,−1). Equivalent to CNOT up to local Hadamards.',
   matrix: 'diag(1, 1, 1, -1)',
+  },
+  {
+    type: 'SWAP',
+    label: 'SWAP',
+    name: 'SWAP',
+    description: 'Swap the states of two qubits.',
+    qasm: 'swap q[control], q[target];',
+    twoQ: true,
+    details: 'Decomposes into 3 CNOTs: CX(a,b); CX(b,a); CX(a,b).',
+    matrix: '[[1,0,0,0],[0,0,1,0],[0,1,0,0],[0,0,0,1]]',
   },
 ];

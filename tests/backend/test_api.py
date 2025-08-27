@@ -226,9 +226,8 @@ class QuantumStateVisualizerBackendTester:
     def test_websocket_endpoint(self):
         """Test WebSocket endpoint availability"""
         try:
-            # Just test if the endpoint exists and responds appropriately to HTTP
-            response = requests.get(f"{self.base_url.replace('http', 'ws')}/ws/simulate", timeout=5)
-            # WebSocket endpoints typically return 426 Upgrade Required for HTTP requests
+            # Perform an HTTP GET; WS endpoint should reject with 426/400/404
+            response = requests.get(f"{self.base_url}/ws/simulate", timeout=5)
             if response.status_code in [426, 400, 404]:
                 self.log_test("WebSocket Endpoint", "PASS", "WebSocket endpoint is available")
             else:

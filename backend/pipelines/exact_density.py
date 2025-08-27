@@ -6,8 +6,9 @@ Implementation based on dev_plane.md specifications.
 import numpy as np
 import time
 from typing import Dict, Any
+from qiskit import QuantumCircuit, transpile
 from qiskit.quantum_info import DensityMatrix
-from qiskit import QuantumCircuit
+from qiskit_aer import AerSimulator
 
 from pipelines.base import SimulationPipeline, SimulationError, ResourceLimitError
 from utils import compute_bloch_vector, compute_purity, clip_tiny_values
@@ -29,7 +30,8 @@ class ExactDensityPipeline(SimulationPipeline):
     
     def __init__(self):
         super().__init__("ExactDensityPipeline")
-        self.max_qubits = 16  # Density matrices scale as 4^n
+        # Density matrices scale as 4^n; cap tightened to 8 for safety/perf
+        self.max_qubits = 8
     
     def validate_circuit(self, circuit: QuantumCircuit) -> bool:
         """
@@ -72,17 +74,38 @@ class ExactDensityPipeline(SimulationPipeline):
             # Preprocess circuit
             processed_circuit = self.preprocess_circuit(circuit)
             
-            # Simulate full density matrix evolution
+            # Simulate full density matrix evolution using Aer density_matrix backend
             try:
-                density_matrix = DensityMatrix.from_instruction(processed_circuit)
-                dm_array = density_matrix.data
+                sim = AerSimulator(method='density_matrix')
+                circ = processed_circuit.copy()
+                # Ensure final density matrix is saved
+                try:
+                    circ.save_density_matrix()
+                except Exception:
+                    # Older Aer APIs: add via instruction import if needed
+                    from qiskit.providers.aer.library import SaveDensityMatrix  # type: ignore
+                    circ.append(SaveDensityMatrix(), [])
+                tcirc = transpile(circ, sim)
+                result = sim.run(tcirc, shots=1).result()
+                data0 = result.data(0)
+                dm = data0.get('density_matrix', None)
+                if dm is None:
+                    raise RuntimeError("No density_matrix in simulation result")
+                dm_array = np.array(dm, dtype=np.complex128)
             except Exception as e:
-                raise SimulationError(f"Density matrix simulation failed: {str(e)}", pipeline=self.name)
+                # Fallback: try unitary-only path for strictly unitary circuits
+                try:
+                    density_matrix = DensityMatrix.from_instruction(processed_circuit)
+                    dm_array = density_matrix.data
+                except Exception:
+                    raise SimulationError(f"Density matrix simulation failed: {str(e)}", pipeline=self.name)
             
             # Compute reduced density matrices for each qubit
             results = {}
             n_qubits = processed_circuit.num_qubits
             
+            # Wrap full density into Qiskit object once for partial_trace convenience
+            dm_qi = DensityMatrix(dm_array)
             for qubit_id in range(n_qubits):
                 try:
                     # Compute reduced density matrix using Qiskit's partial trace
@@ -90,7 +113,7 @@ class ExactDensityPipeline(SimulationPipeline):
                     
                     if qubits_to_trace:
                         # Partial trace over other qubits
-                        rho_reduced = density_matrix.partial_trace(qubits_to_trace)
+                        rho_reduced = dm_qi.partial_trace(qubits_to_trace)
                         rho = rho_reduced.data
                     else:
                         # Single qubit case - use full density matrix
@@ -101,6 +124,11 @@ class ExactDensityPipeline(SimulationPipeline):
                         self.logger.warning(f"Unexpected density matrix shape {rho.shape} for qubit {qubit_id}")
                         # Fallback to manual computation
                         rho = self._compute_reduced_density_matrix_manual(dm_array, n_qubits, qubit_id)
+                    # Enforce Hermiticity and trace normalization defensively
+                    rho = 0.5 * (rho + rho.conj().T)
+                    tr = float(np.trace(rho).real)
+                    if abs(tr) > 1e-15:
+                        rho = rho / tr
                     
                     # Compute Bloch coordinates
                     bloch_coords = compute_bloch_vector(rho)
@@ -121,7 +149,7 @@ class ExactDensityPipeline(SimulationPipeline):
                     results[qubit_id] = {
                         'bloch': [0.0, 0.0, 0.0],
                         'purity': 0.5,
-                        'rho': [[0.5+0j, 0.0+0j], [0.0+0j, 0.5+0j]]
+                        'rho': [[[0.5, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.5, 0.0]]]
                     }
             
             execution_time = time.time() - start_time
@@ -140,45 +168,43 @@ class ExactDensityPipeline(SimulationPipeline):
         Manual computation of reduced density matrix when Qiskit method fails.
         """
         try:
-            # Reshape density matrix to tensor form
-            shape = [2] * (2 * n_qubits)
-            dm_tensor = dm_full.reshape(shape)
-            
-            # Trace over unwanted qubits
-            axes_to_trace = []
-            for i in range(n_qubits):
-                if i != target_qubit:
-                    axes_to_trace.extend([i, i + n_qubits])
-            
-            # Perform traces sequentially
-            dm_reduced = dm_tensor
-            for _ in range(len(axes_to_trace) // 2):
-                # Find next pair to trace
-                ax1 = 0
-                ax2 = len(dm_reduced.shape) // 2
-                dm_reduced = np.trace(dm_reduced, axis1=ax1, axis2=ax2)
-            
-            return dm_reduced.astype(np.complex128)
-            
+            if n_qubits == 1:
+                # Already 2x2
+                rho = dm_full
+            else:
+                # Reshape to (2,)*n (bra) + (2,)*n (ket)
+                shape = (2,) * (2 * n_qubits)
+                dm_tensor = dm_full.reshape(shape)
+                # Bring target bra axis first, target ket axis next block start
+                perm = (target_qubit,
+                        *[i for i in range(n_qubits) if i != target_qubit],
+                        target_qubit + n_qubits,
+                        *[i + n_qubits for i in range(n_qubits) if i != target_qubit])
+                dm_perm = dm_tensor.transpose(perm)
+                # Now shape is (2, 2^(n-1), 2, 2^(n-1)); trace over middle dims (diagonal)
+                m = 1 << (n_qubits - 1)
+                dm_shaped = dm_perm.reshape(2, m, 2, m)
+                rho = np.einsum('aibi->ab', dm_shaped)
+            # Defensive normalization and Hermiticity
+            rho = 0.5 * (rho + rho.conj().T)
+            tr = float(np.trace(rho).real)
+            if abs(tr) > 1e-15:
+                rho = rho / tr
+            return rho.astype(np.complex128)
         except Exception as e:
             self.logger.warning(f"Manual density matrix computation failed: {e}")
-            # Return maximally mixed state as fallback
             return np.array([[0.5+0j, 0.0+0j], [0.0+0j, 0.5+0j]], dtype=np.complex128)
     
     def _format_density_matrix(self, rho: np.ndarray) -> list:
-        """
-        Format density matrix for JSON serialization.
-        """
+        """Format density matrix for JSON serialization as [[re,im],...]."""
         formatted = []
         for i in range(2):
             row = []
             for j in range(2):
-                # Clip tiny values
                 real = clip_tiny_values(rho[i, j].real)
                 imag = clip_tiny_values(rho[i, j].imag)
-                row.append(complex(real, imag))
+                row.append([float(real), float(imag)])
             formatted.append(row)
-        
         return formatted
     
     def _estimate_memory(self, n_qubits: int) -> float:
