@@ -1,4 +1,4 @@
-# Quantum State Visualizer
+# QubitLens
 
 A comprehensive web-based application for quantum circuit simulation and Bloch sphere visualization. This interactive tool provides real-time 3D visualization of quantum states, making quantum computing concepts accessible through intuitive visual representations.
 

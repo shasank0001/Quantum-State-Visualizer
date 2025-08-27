@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive Test Runner for Quantum State Visualizer
+Comprehensive Test Runner for QubitLens
 Runs backend API tests, frontend UI tests, and integration tests
 """
 import os
@@ -205,17 +205,17 @@ def run_backend_tests(backend_url: str, logger: logging.Logger, test_specific_ci
     """Run backend API tests"""
     try:
         from test_api import QuantumStateVisualizerBackendTester
-        
+
         log_section(logger, "RUNNING BACKEND API TESTS")
-        
+
         tester = QuantumStateVisualizerBackendTester(backend_url, logger)
-        
+
         if test_specific_circuit:
             from test_circuits import TEST_CIRCUITS
             if test_specific_circuit in TEST_CIRCUITS:
                 logger.info(f"Testing specific circuit: {test_specific_circuit}")
                 tester.test_simulate_endpoint_with_circuit(
-                    test_specific_circuit, 
+                    test_specific_circuit,
                     TEST_CIRCUITS[test_specific_circuit]
                 )
                 result = {
@@ -233,33 +233,33 @@ def run_backend_tests(backend_url: str, logger: logging.Logger, test_specific_ci
             result = {**tester.run_all_tests(), "test_type": "backend"}
             logger.debug(f"Backend test result: {result}")
             return result
-            
+
     except ImportError as e:
         logger.error(f"Failed to import backend test module: {e}")
         return {"passed": 0, "failed": 1, "errors": [str(e)], "test_type": "backend"}
     except Exception as e:
         logger.error(f"Backend tests failed: {e}")
-        logger.debug(f"Backend test exception details:", exc_info=True)
+        logger.debug("Backend test exception details:", exc_info=True)
         return {"passed": 0, "failed": 1, "errors": [str(e)], "test_type": "backend"}
 
 def run_frontend_tests(frontend_url: str, backend_url: str, logger: logging.Logger, headless: bool = True) -> dict:
     """Run frontend UI tests"""
     try:
         from test_ui import QuantumStateVisualizerFrontendTester, check_prerequisites
-        
+
         if not check_prerequisites():
             logger.error("ChromeDriver not available")
             return {
-                "passed": 0, 
-                "failed": 1, 
-                "errors": ["ChromeDriver not available"], 
+                "passed": 0,
+                "failed": 1,
+                "errors": ["ChromeDriver not available"],
                 "test_type": "frontend"
             }
-        
+
         log_section(logger, "RUNNING FRONTEND UI TESTS")
-        
+
         tester = QuantumStateVisualizerFrontendTester(frontend_url, backend_url, logger)
-        
+
         # Override headless setting if requested
         if not headless:
             logger.info("Running frontend tests with visible browser")
@@ -267,16 +267,16 @@ def run_frontend_tests(frontend_url: str, backend_url: str, logger: logging.Logg
             from selenium.webdriver.chrome.options import Options
             from selenium import webdriver
             from selenium.webdriver.support.ui import WebDriverWait
-            
+
             chrome_options = Options()
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--window-size=1920,1080")
-            
+
             tester.driver = webdriver.Chrome(options=chrome_options)
             tester.wait = WebDriverWait(tester.driver, 10)
-        
+
         try:
             results = tester.run_all_tests()
             result = {**results, "test_type": "frontend"}
@@ -284,14 +284,14 @@ def run_frontend_tests(frontend_url: str, backend_url: str, logger: logging.Logg
             return result
         finally:
             tester.teardown()
-            
+
     except ImportError as e:
         logger.error(f"Failed to import frontend test module (missing selenium?): {e}")
         logger.info("Install selenium: pip install selenium")
         return {"passed": 0, "failed": 1, "errors": [str(e)], "test_type": "frontend"}
     except Exception as e:
         logger.error(f"Frontend tests failed: {e}")
-        logger.debug(f"Frontend test exception details:", exc_info=True)
+        logger.debug("Frontend test exception details:", exc_info=True)
         return {"passed": 0, "failed": 1, "errors": [str(e)], "test_type": "frontend"}
 
 def generate_test_report(results: list, logger: logging.Logger, output_file: str = None):
@@ -360,7 +360,7 @@ def generate_test_report(results: list, logger: logging.Logger, output_file: str
     return report
 
 def main():
-    parser = argparse.ArgumentParser(description="Quantum State Visualizer Test Runner")
+    parser = argparse.ArgumentParser(description="QubitLens Test Runner")
     parser.add_argument("--backend-url", default="http://localhost:8001", help="Backend URL")
     parser.add_argument("--frontend-url", default="http://localhost:5173", help="Frontend URL")
     parser.add_argument("--auto-start", action="store_true", help="Automatically start services if needed")
@@ -390,7 +390,7 @@ def main():
                 handler.setLevel(logging.DEBUG)
     
     # Start logging
-    log_section(logger, "QUANTUM STATE VISUALIZER - TEST RUNNER")
+    log_section(logger, "QUBITLENS - TEST RUNNER")
     logger.info(f"Workspace: {workspace_root}")
     logger.info(f"Backend Path: {backend_path}")
     logger.info(f"Frontend Path: {frontend_path}")

@@ -1,5 +1,5 @@
 """
-Backend API Test Suite for Quantum State Visualizer
+Backend API Test Suite for QubitLens
 Tests all backend endpoints with various circuit types
 """
 import requests
@@ -266,11 +266,11 @@ class QuantumStateVisualizerBackendTester:
         """Run all backend tests"""
         if self.logger:
             self.logger.info("=" * 80)
-            self.logger.info("QUANTUM STATE VISUALIZER - BACKEND API TESTS")
+            self.logger.info("QUBITLENS - BACKEND API TESTS")
             self.logger.info("=" * 80)
         else:
             print("=" * 80)
-            print("QUANTUM STATE VISUALIZER - BACKEND API TESTS")
+            print("QUBITLENS - BACKEND API TESTS")
             print("=" * 80)
         
         # Test server health
@@ -356,7 +356,7 @@ def main():
     """Main test runner"""
     import argparse
     
-    parser = argparse.ArgumentParser(description="Test Quantum State Visualizer Backend API")
+    parser = argparse.ArgumentParser(description="Test QubitLens Backend API")
     parser.add_argument("--url", default="http://localhost:8001", help="Backend URL")
     parser.add_argument("--circuit", help="Test specific circuit only")
     

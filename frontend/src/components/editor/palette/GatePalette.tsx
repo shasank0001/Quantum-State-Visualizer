@@ -69,16 +69,16 @@ export const GatePalette = ({ onShowInfo }: Props) => {
               <span className="flex-1 text-left">{g.label}</span>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 ml-1"
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="h-6 w-6 ml-1 inline-flex items-center justify-center rounded-md hover:bg-accent text-muted-foreground"
                     onClick={(e) => { e.stopPropagation(); onShowInfo?.(g.type); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onShowInfo?.(g.type); } }}
                     aria-label={`About ${g.name}`}
                   >
                     <Info className="w-3.5 h-3.5" />
-                  </Button>
+                  </span>
                 </TooltipTrigger>
                 <TooltipContent side="right" className="max-w-[220px]">
                   <div className="text-xs space-y-1">

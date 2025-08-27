@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for Quantum State Visualizer Backend
+# Multi-stage Dockerfile for QubitLens Backend
 # Implements containerization as specified in dev_plane.md
 
 FROM python:3.11-slim as builder

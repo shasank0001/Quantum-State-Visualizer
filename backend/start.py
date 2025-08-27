@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Startup script for Quantum State Visualizer Backend
+Startup script for QubitLens Backend
 """
 
 import sys
@@ -34,7 +34,7 @@ def install_dependencies():
 
 def start_server(host="0.0.0.0", port=8000, reload=True):
     """Start the FastAPI server"""
-    print(f"Starting Quantum State Visualizer Backend on {host}:{port}")
+    print(f"Starting QubitLens Backend on {host}:{port}")
     print(f"API Documentation: http://{host}:{port}/docs")
     print(f"Health Check: http://{host}:{port}/health")
     print("-" * 60)
@@ -54,7 +54,7 @@ def start_server(host="0.0.0.0", port=8000, reload=True):
 
 def main():
     """Main startup function"""
-    print("🚀 Quantum State Visualizer Backend Startup")
+    print("🚀 QubitLens Backend Startup")
     print("=" * 50)
     
     # Change to backend directory

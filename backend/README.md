@@ -1,4 +1,4 @@
-# Quantum State Visualizer Backend
+# QubitLens Backend
 
 FastAPI-based backend for quantum circuit simulation and Bloch sphere visualization. This implementation follows the architecture specified in `dev_plane.md` with modular simulation pipelines.
 

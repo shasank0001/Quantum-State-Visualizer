@@ -1,5 +1,5 @@
 """
-Frontend Component Test Suite for Quantum State Visualizer
+Frontend Component Test Suite for QubitLens
 Tests React components, state management, and API integration
 """
 import json
@@ -432,11 +432,11 @@ class QuantumStateVisualizerFrontendTester:
         """Run all frontend tests"""
         if self.logger:
             self.logger.info("=" * 80)
-            self.logger.info("QUANTUM STATE VISUALIZER - FRONTEND TESTS")
+            self.logger.info("QUBITLENS - FRONTEND TESTS")
             self.logger.info("=" * 80)
         else:
             print("=" * 80)
-            print("QUANTUM STATE VISUALIZER - FRONTEND TESTS")
+            print("QUBITLENS - FRONTEND TESTS")
             print("=" * 80)
         
         # Basic component tests
@@ -529,7 +529,7 @@ def main():
     """Main test runner"""
     import argparse
     
-    parser = argparse.ArgumentParser(description="Test Quantum State Visualizer Frontend")
+    parser = argparse.ArgumentParser(description="Test QubitLens Frontend")
     parser.add_argument("--frontend-url", default="http://localhost:5173", help="Frontend URL")
     parser.add_argument("--backend-url", default="http://localhost:8001", help="Backend URL")
     parser.add_argument("--no-headless", action="store_true", help="Run browser in visible mode")

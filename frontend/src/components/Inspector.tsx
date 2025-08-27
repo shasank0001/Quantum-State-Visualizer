@@ -32,10 +32,15 @@ export const Inspector = () => {
     // TODO: Add toast notification
   };
   
-  const formatComplex = (real: number, imag: number = 0) => {
-    const r = Math.abs(real) < 1e-10 ? 0 : real;
-    const i = Math.abs(imag) < 1e-10 ? 0 : imag;
-    
+  const formatComplex = (valueOrReal: number | [number, number], imag?: number) => {
+    let r: number, i: number;
+    if (Array.isArray(valueOrReal)) {
+      r = valueOrReal[0] ?? 0; i = valueOrReal[1] ?? 0;
+    } else {
+      r = valueOrReal; i = imag ?? 0;
+    }
+    r = Math.abs(r) < 1e-10 ? 0 : r;
+    i = Math.abs(i) < 1e-10 ? 0 : i;
     if (i === 0) return r.toFixed(4);
     if (r === 0) return `${i.toFixed(4)}i`;
     return `${r.toFixed(4)} ${i >= 0 ? '+' : ''}${i.toFixed(4)}i`;
@@ -137,18 +142,18 @@ export const Inspector = () => {
               <tbody>
                 <tr>
                   <td className="text-center p-2 border-r border-b border-border">
-                    {formatComplex(qubit.rho[0][0])}
+                    {formatComplex(qubit.rho[0][0] as any)}
                   </td>
                   <td className="text-center p-2 border-b border-border">
-                    {formatComplex(qubit.rho[0][1])}
+                    {formatComplex(qubit.rho[0][1] as any)}
                   </td>
                 </tr>
                 <tr>
                   <td className="text-center p-2 border-r border-border">
-                    {formatComplex(qubit.rho[1][0])}
+                    {formatComplex(qubit.rho[1][0] as any)}
                   </td>
                   <td className="text-center p-2">
-                    {formatComplex(qubit.rho[1][1])}
+                    {formatComplex(qubit.rho[1][1] as any)}
                   </td>
                 </tr>
               </tbody>

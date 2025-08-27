@@ -95,7 +95,42 @@ def parse_and_validate_circuit(qasm_code: str) -> Tuple[QuantumCircuit, Dict[str
                 return f"cx q[{a}], q[{b}];\ncx q[{b}], q[{a}];"
             qasm = re.sub(dcx_pat, dcx_repl, qasm)
 
-            # 4) RZZ(theta) decomposition via CX-RZ-CX (control=a, target=b)
+            # 4) RXX(theta) via H⊗H · RZZ(theta) · H⊗H
+            rxx_pat = re.compile(r"^\s*rxx\(([^)]+)\)\s+q\[(\d+)\],\s*q\[(\d+)\];\s*$", re.IGNORECASE | re.MULTILINE)
+            def rxx_repl(m):
+                angle, a, b = m.group(1), m.group(2), m.group(3)
+                return (f"h q[{a}];\n"
+                        f"h q[{b}];\n"
+                        f"rzz({angle}) q[{a}], q[{b}];\n"
+                        f"h q[{a}];\n"
+                        f"h q[{b}];")
+            qasm = re.sub(rxx_pat, rxx_repl, qasm)
+
+            # 5) RYY(theta) via Sdg⊗Sdg · H⊗H · RZZ(theta) · H⊗H · S⊗S
+            ryy_pat = re.compile(r"^\s*ryy\(([^)]+)\)\s+q\[(\d+)\],\s*q\[(\d+)\];\s*$", re.IGNORECASE | re.MULTILINE)
+            def ryy_repl(m):
+                angle, a, b = m.group(1), m.group(2), m.group(3)
+                return (f"sdg q[{a}];\n"
+                        f"sdg q[{b}];\n"
+                        f"h q[{a}];\n"
+                        f"h q[{b}];\n"
+                        f"rzz({angle}) q[{a}], q[{b}];\n"
+                        f"h q[{a}];\n"
+                        f"h q[{b}];\n"
+                        f"s q[{a}];\n"
+                        f"s q[{b}];")
+            qasm = re.sub(ryy_pat, ryy_repl, qasm)
+
+            # 6) RZX(theta) via I⊗H · RZZ(theta) · I⊗H (transform X <-> Z on target)
+            rzx_pat = re.compile(r"^\s*rzx\(([^)]+)\)\s+q\[(\d+)\],\s*q\[(\d+)\];\s*$", re.IGNORECASE | re.MULTILINE)
+            def rzx_repl(m):
+                angle, a, b = m.group(1), m.group(2), m.group(3)
+                return (f"h q[{b}];\n"
+                        f"rzz({angle}) q[{a}], q[{b}];\n"
+                        f"h q[{b}];")
+            qasm = re.sub(rzx_pat, rzx_repl, qasm)
+
+            # 7) RZZ(theta) decomposition via CX-RZ-CX (control=a, target=b)
             rzz_pat = re.compile(r"^\s*rzz\(([^)]+)\)\s+q\[(\d+)\],\s*q\[(\d+)\];\s*$", re.IGNORECASE | re.MULTILINE)
             def rzz_repl(m):
                 angle, a, b = m.group(1), m.group(2), m.group(3)

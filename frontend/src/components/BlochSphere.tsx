@@ -42,8 +42,12 @@ export const BlochSphere = ({ qubit, isSelected, onSelect, size = 'medium' }: Bl
         <div style={{ height: canvasHeight }}>
           <Canvas
             camera={{ position: [2.5, 2.5, 2.5], fov: 50 }}
-            dpr={[1, 2]}
+            dpr={[1, 1.5]}
             performance={{ min: 0.5 }}
+            gl={{ powerPreference: 'low-power', antialias: true }}
+            onCreated={({ gl }) => {
+              gl.domElement.addEventListener('webglcontextlost', (e) => e.preventDefault(), { passive: false });
+            }}
           >
             <SphereContent qubit={qubit} isSelected={isSelected} size={size} />
             <OrbitControls 

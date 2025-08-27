@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
+import React from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text, Line } from '@react-three/drei';
 import * as THREE from 'three';
@@ -103,6 +104,8 @@ export const ExpandedQubitView = ({ qubit, isOpen, onClose }: ExpandedQubitViewP
   const [showPhaseAngle, setShowPhaseAngle] = useState(true);
   const [showState, setShowState] = useState(true);
   const precision = 4;
+  const [mounted, setMounted] = useState(false);
+  const [canvasError, setCanvasError] = useState<string | null>(null);
 
   // Local interactive Bloch vector for this expanded view (does not mutate global store)
   const [viewBloch, setViewBloch] = useState(qubit.bloch);
@@ -112,6 +115,18 @@ export const ExpandedQubitView = ({ qubit, isOpen, onClose }: ExpandedQubitViewP
     initialBlochRef.current = qubit.bloch;
     setViewBloch(qubit.bloch);
   }, [qubit]);
+
+  // Ensure canvas only renders after dialog is open and layout is established
+  useEffect(() => {
+    if (isOpen) {
+      const t = setTimeout(() => setMounted(true), 0);
+      return () => clearTimeout(t);
+    } else {
+      setMounted(false);
+    }
+  }, [isOpen]);
+
+  const webglOk = isWebGLAvailable();
 
   // Rotation helpers around axes by angle (radians)
   const rotateX = (rad: number) => {
@@ -156,7 +171,7 @@ export const ExpandedQubitView = ({ qubit, isOpen, onClose }: ExpandedQubitViewP
   const prob1 = 1 - prob0;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
   <DialogContent className="max-w-4xl w-full h-[85vh] sm:h-[90vh] max-h-[90vh] p-0 bg-background border border-border grid-rows-[auto,1fr] overflow-hidden">
         <DialogHeader className="p-6 border-b border-border bg-gradient-quantum-subtle">
           <div className="flex items-center justify-between">
@@ -179,12 +194,24 @@ export const ExpandedQubitView = ({ qubit, isOpen, onClose }: ExpandedQubitViewP
 
   <div className="flex h-full min-h-0">
           {/* Main 3D View */}
-          <div className="flex-1 relative">
+          <div className="flex-1 relative min-h-[360px]">
             <div className="absolute inset-0">
+              {!webglOk && (
+                <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
+                  WebGL is not available in this browser/session.
+                </div>
+              )}
+              {mounted && webglOk && !canvasError && (
+              <ErrorBoundary onError={setCanvasError}>
               <Canvas
+                style={{ background: 'transparent' }}
                 camera={{ position: [4, 4, 4], fov: 45 }}
-                dpr={[1, 2]}
+                dpr={[1, 1.75]}
                 performance={{ min: 0.5 }}
+                gl={{ powerPreference: 'high-performance', antialias: true }}
+                onCreated={({ gl }) => {
+                  gl.domElement.addEventListener('webglcontextlost', (e) => e.preventDefault(), { passive: false });
+                }}
               >
                 <InteractiveBlochSphere 
                   qubit={{ ...qubit, bloch: { ...viewBloch, purity: qubit.bloch.purity } }} 
@@ -200,6 +227,16 @@ export const ExpandedQubitView = ({ qubit, isOpen, onClose }: ExpandedQubitViewP
                   maxDistance={8}
                 />
               </Canvas>
+              </ErrorBoundary>
+              )}
+              {canvasError && (
+                <div className="w-full h-full flex items-center justify-center">
+                  <Card className="p-4 bg-background/90 border-border">
+                    <div className="text-sm text-destructive">Failed to render 3D view.</div>
+                    <div className="text-xs text-muted-foreground mt-1 break-all">{canvasError}</div>
+                  </Card>
+                </div>
+              )}
             </div>
 
             {/* Overlay Controls */}
@@ -654,4 +691,33 @@ function formatComplex(value: number | [number, number]): string {
   }
   
   return value.toString();
+}
+
+// Simple ErrorBoundary to catch Canvas/Three errors
+class ErrorBoundary extends React.Component<{ onError: (msg: string) => void; children: React.ReactNode }, { hasError: boolean }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: any) {
+    this.props.onError(String(error?.message || error));
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children as any;
+  }
+}
+
+function isWebGLAvailable(): boolean {
+  try {
+    const canvas = document.createElement('canvas');
+    return !!(
+      (canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))
+    );
+  } catch {
+    return false;
+  }
 }

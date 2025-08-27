@@ -25,7 +25,7 @@ const Index = () => {
                 <AtomIcon className="w-5 h-5 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-foreground">Quantum State Visualizer</h1>
+                <h1 className="text-2xl font-bold text-foreground">QubitLens</h1>
                 <p className="text-sm text-muted-foreground">Interactive Bloch Sphere Visualization</p>
               </div>
             </div>
@@ -95,7 +95,7 @@ const Index = () => {
       <footer className="border-t border-border bg-gradient-quantum-subtle mt-12">
         <div className="container mx-auto px-4 py-6">
           <div className="text-center text-sm text-muted-foreground">
-            <p>Quantum State Visualizer - Interactive quantum computing education tool</p>
+            <p>QubitLens - Interactive quantum computing education tool</p>
             <p className="mt-1">Built with React Three Fiber • OpenQASM 2.0 Compatible</p>
           </div>
         </div>

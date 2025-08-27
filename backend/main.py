@@ -1,8 +1,8 @@
 """
-Quantum State Visualizer Backend
+QubitLens Backend
 
 FastAPI application for quantum circuit simulation and Bloch sphere visualization.
-Implements the architecture specified in dev_plane.md with modular simulation pipelines.
+Implements the architecture specified in dev_plan.md with modular simulation pipelines.
 """
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -35,7 +35,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Quantum State Visualizer API",
+    title="QubitLens API",
     description="Backend API for quantum circuit simulation and Bloch sphere visualization",
     version="1.0.0",
 )
@@ -120,7 +120,7 @@ except Exception:
 async def root():
     """Health check endpoint"""
     return {
-        "message": "Quantum State Visualizer API",
+    "message": "QubitLens API",
         "status": "running",
         "timestamp": datetime.utcnow().isoformat(),
         "available_pipelines": list(PIPELINES.keys())

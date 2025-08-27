@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Environment setup script for Quantum State Visualizer Backend
+Environment setup script for QubitLens Backend
 """
 
 import subprocess
@@ -94,7 +94,7 @@ def display_next_steps():
 
 def main():
     """Main setup function"""
-    print("🔧 Quantum State Visualizer Backend - Environment Setup")
+    print("🔧 QubitLens Backend - Environment Setup")
     print("="*60)
     
     # Change to backend directory

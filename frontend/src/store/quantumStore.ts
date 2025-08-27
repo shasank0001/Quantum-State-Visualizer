@@ -9,10 +9,13 @@ export interface BlochState {
   purity: number;
 }
 
+type ComplexEntry = number | [number, number];
+type Rho2x2 = [[ComplexEntry, ComplexEntry], [ComplexEntry, ComplexEntry]];
+
 export interface QubitState {
   id: number;
   bloch: BlochState;
-  rho: [[number, number], [number, number]]; // 2x2 density matrix
+  rho: Rho2x2; // 2x2 density matrix (real numbers or [re, im])
   label: string;
 }
 
@@ -187,16 +190,18 @@ cx q[1], q[2];`,
 
       const response = await quantumAPI.simulate(request);
 
-// Helper function to parse complex numbers from backend
-function parseComplexNumber(complexStr: string): number {
-  // Backend returns complex numbers as strings like "0.5+0j" or "0.5-0.2j"
-  // For density matrices, we usually only need the real part
-  if (typeof complexStr === 'string') {
-    const match = complexStr.match(/^([+-]?[0-9]*\.?[0-9]+)/);
-    return match ? parseFloat(match[1]) : 0;
-  }
-  return complexStr as number; // fallback if already a number
-}
+      // Normalize arbitrary backend DM entry into ComplexEntry
+      const toComplexEntry = (v: any): ComplexEntry => {
+        if (Array.isArray(v) && v.length === 2 && typeof v[0] === 'number' && typeof v[1] === 'number') {
+          return [v[0], v[1]];
+        }
+        if (typeof v === 'number') return v;
+        if (typeof v === 'string') {
+          const m = v.match(/^\s*([+-]?[0-9]*\.?[0-9]+)/);
+          return m ? parseFloat(m[1]) : 0;
+        }
+        return 0;
+      };
 
       // Convert backend response to frontend format
       const qubits: QubitState[] = response.qubits.map((qubit: QubitResponse) => ({
@@ -208,9 +213,9 @@ function parseComplexNumber(complexStr: string): number {
           purity: qubit.purity,
         },
         rho: [
-          [parseComplexNumber(qubit.density_matrix[0][0]), parseComplexNumber(qubit.density_matrix[0][1])],
-          [parseComplexNumber(qubit.density_matrix[1][0]), parseComplexNumber(qubit.density_matrix[1][1])]
-        ] as [[number, number], [number, number]],
+          [toComplexEntry(qubit.density_matrix[0][0]), toComplexEntry(qubit.density_matrix[0][1])],
+          [toComplexEntry(qubit.density_matrix[1][0]), toComplexEntry(qubit.density_matrix[1][1])]
+        ] as Rho2x2,
         label: qubit.label,
       }));
 
